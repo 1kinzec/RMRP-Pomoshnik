@@ -55,8 +55,6 @@ begin
 end;
 
 procedure InitializeWizard;
-var
-  I: Integer;
 begin
   { Deep RMRP blue palette }
   WizardForm.Color := $00180B05;
@@ -81,6 +79,4 @@ begin
   WizardForm.BackButton.Font.Name := 'Segoe UI';
   WizardForm.CancelButton.Font.Name := 'Segoe UI';
 
-  for I := 0 to WizardForm.ComponentList.Items.Count - 1 do
-    WizardForm.ComponentList.Items[I].Font.Name := 'Segoe UI';
 end;
