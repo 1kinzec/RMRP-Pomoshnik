@@ -43,7 +43,7 @@ FinishedHeadingLabel=Установка завершена
 FinishedLabelNoIcons=Установка {#MyAppName} успешно завершена.
 
 [Code]
-procedure SetLabelStyle(L: TLabel; Size: Integer; Bold: Boolean; Color: TColor);
+procedure SetLabelStyle(L: TNewStaticText; Size: Integer; Bold: Boolean; Color: TColor);
 begin
   L.Font.Name := 'Segoe UI';
   L.Font.Size := Size;
