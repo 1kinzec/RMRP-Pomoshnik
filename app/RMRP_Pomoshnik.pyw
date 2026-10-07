@@ -5,11 +5,17 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import tkinter as tk
+import threading
+import math
+try:
+    import winsound
+except ImportError:
+    winsound = None
 from tkinter import ttk, messagebox, simpledialog
 from datetime import datetime
 
 APP_NAME = "RMRP Помощник"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 APP_PUBLISHER = "Kinzec X WOLF"
 SUPABASE_URL = "https://cyihqnquxaxnonjbvshm.supabase.co"
 SUPABASE_KEY = "sb_publishable_3X8WkqV57kAqB8v6KS458A_mPnSBBRK"
@@ -147,6 +153,7 @@ class App(tk.Tk):
         self.prof = {}
         self.nav_buttons = {}
         self.content = None
+        self._hover_jobs = {}
         self._styles()
         self.show_login()
 
@@ -156,65 +163,123 @@ class App(tk.Tk):
             s.theme_use("clam")
         except Exception:
             pass
-        s.configure("TButton", background=ACCENT, foreground="white", borderwidth=0, padding=(14, 9), font=("Segoe UI", 10, "bold"))
-        s.map("TButton", background=[("active", "#2563eb")])
-        s.configure("Secondary.TButton", background=PANEL2, foreground=TEXT, borderwidth=1, padding=(14, 9), font=("Segoe UI", 10, "bold"))
-        s.configure("Danger.TButton", background=DANGER, foreground="white", padding=(14, 9), font=("Segoe UI", 10, "bold"))
-        s.configure("Success.TButton", background=SUCCESS, foreground="white", padding=(14, 9), font=("Segoe UI", 10, "bold"))
-        s.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT, rowheight=34, borderwidth=0, font=("Segoe UI", 9))
-        s.configure("Treeview.Heading", background=PANEL2, foreground=MUTED, font=("Segoe UI", 9, "bold"))
-        s.configure("TCombobox", fieldbackground="#0f1724", foreground=TEXT, background=PANEL2)
-        s.configure("TNotebook", background=BG, borderwidth=0)
-        s.configure("TNotebook.Tab", background=PANEL2, foreground=MUTED, padding=(14, 8))
+        s.configure("TButton", background=ACCENT, foreground="white", borderwidth=0, padding=(16, 10), font=("Segoe UI", 10, "bold"), relief="flat")
+        s.map("TButton", background=[("active", "#2563eb"), ("pressed", "#1d4ed8")], foreground=[("disabled", "#64748b")])
+        s.configure("Secondary.TButton", background=PANEL2, foreground=TEXT, borderwidth=1, padding=(16, 10), font=("Segoe UI", 10, "bold"), relief="flat")
+        s.map("Secondary.TButton", background=[("active", "#1e3352"), ("pressed", "#263d60")])
+        s.configure("Danger.TButton", background=DANGER, foreground="white", padding=(16, 10), font=("Segoe UI", 10, "bold"), relief="flat")
+        s.configure("Success.TButton", background=SUCCESS, foreground="white", padding=(16, 10), font=("Segoe UI", 10, "bold"), relief="flat")
+        s.configure("Treeview", background=PANEL, fieldbackground=PANEL, foreground=TEXT, rowheight=38, borderwidth=0, font=("Segoe UI", 9))
+        s.configure("Treeview.Heading", background="#101a2b", foreground=MUTED, font=("Segoe UI", 9, "bold"), relief="flat")
+        s.map("Treeview", background=[("selected", "#1d4ed8")], foreground=[("selected", "white")])
+        s.configure("TCombobox", fieldbackground="#0d1522", foreground=TEXT, background=PANEL2, arrowcolor=ACCENT2)
+        s.configure("TNotebook", background=BG, borderwidth=0, tabmargins=4)
+        s.configure("TNotebook.Tab", background="#111b2c", foreground=MUTED, padding=(18, 10), font=("Segoe UI", 9, "bold"))
+        s.map("TNotebook.Tab", background=[("selected", "#1d4ed8")], foreground=[("selected", "white")])
+
+    def play_sound(self, kind="click"):
+        if winsound is None:
+            try: self.bell()
+            except Exception: pass
+            return
+        tones = {
+            "click": [(740, 28)],
+            "hover": [(560, 18)],
+            "success": [(660, 45), (880, 55)],
+            "error": [(300, 70), (220, 90)],
+            "open": [(520, 25), (700, 35)],
+        }
+        def run():
+            try:
+                for freq, dur in tones.get(kind, tones["click"]): winsound.Beep(freq, dur)
+            except Exception: pass
+        threading.Thread(target=run, daemon=True).start()
+
+    def animate_in(self, widget):
+        widget.update_idletasks()
+        widget.place_configure() if widget.winfo_manager() == "place" else None
+        try:
+            widget.attributes("-alpha", 0.0)
+            def step(i=0):
+                a=min(1.0, i/10)
+                try: widget.attributes("-alpha", a)
+                except Exception: return
+                if a < 1: self.after(18, lambda: step(i+1))
+            step()
+        except Exception:
+            pass
+
+    def pulse_button(self, button, active_bg="#2563eb"):
+        old = button.cget("bg")
+        button.configure(bg=active_bg, fg="white")
+        self.after(100, lambda: button.configure(bg=old))
+        self.play_sound("click")
+
+    def make_nav_button(self, parent, icon, title):
+        b = tk.Button(parent, text=f"{icon}   {title}", command=lambda t=title: (self.play_sound("click"), self.page(t)), anchor="w", bd=0, relief="flat", bg=PANEL, fg=MUTED, activebackground="#1b2c47", activeforeground=TEXT, font=("Segoe UI", 10, "bold"), padx=18, pady=10, cursor="hand2", highlightthickness=0)
+        b.pack(fill="x", padx=9, pady=2)
+        b.bind("<Enter>", lambda e: self._nav_hover(b, True))
+        b.bind("<Leave>", lambda e: self._nav_hover(b, False))
+        return b
+
+    def _nav_hover(self, b, entered):
+        title = next((k for k,v in self.nav_buttons.items() if v is b), None)
+        if title and b.cget("bg") == PANEL2: return
+        b.configure(bg="#172b47" if entered else PANEL, fg=TEXT if entered else MUTED)
+        if entered: self.play_sound("hover")
 
     def clear(self):
         for widget in self.winfo_children():
             widget.destroy()
 
+    def logo_mark(self, parent, size=74):
+        c=tk.Canvas(parent, width=size, height=size, bg=parent.cget("bg"), highlightthickness=0)
+        c.pack(pady=(20,8))
+        cx=size/2; cy=size/2
+        c.create_polygon(cx,7,size-9,18,size-13,size-5, cx,size-8, 13,size-5,9,18, fill="#162a48", outline="#3b82f6", width=2)
+        c.create_text(cx, cy+1, text="⚖", fill="#7db5ff", font=("Segoe UI Symbol", int(size*.34), "bold"))
+        return c
+
     def show_login(self):
         self.clear()
-        outer = tk.Frame(self, bg=BG)
-        outer.pack(fill="both", expand=True)
-        card = tk.Frame(outer, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
-        card.place(relx=.5, rely=.5, anchor="center", width=500, height=640)
-        tk.Label(card, text="⚖", bg=PANEL, fg=ACCENT, font=("Segoe UI Symbol", 42)).pack(pady=(28, 0))
-        tk.Label(card, text="RMRP ПОМОЩНИК", bg=PANEL, fg=TEXT, font=("Segoe UI", 24, "bold")).pack()
-        tk.Label(card, text="by Kinzec X WOLF", bg=PANEL, fg=MUTED, font=("Segoe UI", 10)).pack(pady=(3, 22))
-        tk.Label(card, text="Вход", bg=PANEL, fg=TEXT, font=("Segoe UI", 17, "bold")).pack(anchor="w", padx=42)
-        self.email = self.entry(card, "Email")
-        self.password = self.entry(card, "Пароль", secret=True)
-        ttk.Button(card, text="Войти", command=self.do_login).pack(fill="x", padx=42, pady=(18, 8))
-        ttk.Button(card, text="Создать аккаунт", style="Secondary.TButton", command=self.show_register).pack(fill="x", padx=42)
-        tk.Label(card, text=f"Версия {APP_VERSION} • защищённые права через Supabase RLS", bg=PANEL, fg=MUTED, font=("Segoe UI", 8)).pack(side="bottom", pady=18)
+        outer=tk.Frame(self,bg=BG); outer.pack(fill="both",expand=True)
+        # soft background glow bands
+        for x,w,c in [(0,.32,"#0d1625"),(.68,.32,"#0d1422")]:
+            tk.Frame(outer,bg=c).place(relx=x,rely=0,relwidth=w,relheight=1)
+        card=tk.Frame(outer,bg=PANEL,highlightbackground="#29456f",highlightthickness=1)
+        card.place(relx=.5,rely=.5,anchor="center",width=540,height=650)
+        self.logo_mark(card,76)
+        tk.Label(card,text="RMRP ПОМОЩНИК",bg=PANEL,fg=TEXT,font=("Segoe UI",25,"bold")).pack()
+        tk.Label(card,text="LEGAL TECH • GTA 5 RP",bg=PANEL,fg=ACCENT2,font=("Segoe UI",9,"bold")).pack(pady=(3,1))
+        tk.Label(card,text="by Kinzec X WOLF",bg=PANEL,fg=MUTED,font=("Segoe UI",9)).pack(pady=(0,22))
+        tk.Label(card,text="Вход в систему",bg=PANEL,fg=TEXT,font=("Segoe UI",17,"bold")).pack(anchor="w",padx=48)
+        self.email=self.entry(card,"Email")
+        self.password=self.entry(card,"Пароль",secret=True)
+        btn=tk.Button(card,text="ВОЙТИ  →",command=self.do_login,bd=0,bg=ACCENT,fg="white",activebackground="#2563eb",font=("Segoe UI",11,"bold"),cursor="hand2",pady=12)
+        btn.pack(fill="x",padx=48,pady=(18,9)); btn.bind("<Enter>",lambda e: btn.configure(bg="#4f91ff")); btn.bind("<Leave>",lambda e: btn.configure(bg=ACCENT))
+        ttk.Button(card,text="Создать аккаунт",style="Secondary.TButton",command=lambda:(self.play_sound("click"),self.show_register())).pack(fill="x",padx=48)
+        tk.Label(card,text=f"v{APP_VERSION}  •  Supabase Secure RLS",bg=PANEL,fg="#65758f",font=("Segoe UI",8)).pack(side="bottom",pady=18)
 
-    def entry(self, parent, placeholder, secret=False):
-        e = ttk.Entry(parent, show="•" if secret else "")
-        e.pack(fill="x", padx=42, pady=8, ipady=4)
-        e.insert(0, placeholder)
-        e.bind("<FocusIn>", lambda _: self._placeholder(e, placeholder, secret))
+    def entry(self,parent,placeholder,secret=False):
+        wrap=tk.Frame(parent,bg="#0d1522",highlightbackground="#233958",highlightthickness=1); wrap.pack(fill="x",padx=48,pady=7)
+        e=tk.Entry(wrap,bg="#0d1522",fg=TEXT,insertbackground=TEXT,relief="flat",bd=0,font=("Segoe UI",10),show="•" if secret else "")
+        e.pack(fill="x",padx=13,ipady=9); e.insert(0,placeholder); e.bind("<FocusIn>",lambda _:self._placeholder(e,placeholder,secret)); e.bind("<FocusIn>",lambda _:wrap.configure(highlightbackground=ACCENT),add="+"); e.bind("<FocusOut>",lambda _:wrap.configure(highlightbackground="#233958"),add="+")
         return e
 
-    def _placeholder(self, widget, text, secret=False):
-        if widget.get() == text:
-            widget.delete(0, "end")
-            if secret:
-                widget.configure(show="•")
+    def _placeholder(self,widget,text,secret=False):
+        if widget.get()==text:
+            widget.delete(0,"end")
+            if secret: widget.configure(show="•")
 
     def show_register(self):
-        self.clear()
-        outer = tk.Frame(self, bg=BG)
-        outer.pack(fill="both", expand=True)
-        card = tk.Frame(outer, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
-        card.place(relx=.5, rely=.5, anchor="center", width=500, height=690)
-        tk.Label(card, text="Создание аккаунта", bg=PANEL, fg=TEXT, font=("Segoe UI", 21, "bold")).pack(pady=(35, 5))
-        tk.Label(card, text="После регистрации роль выдаётся сервером", bg=PANEL, fg=MUTED, font=("Segoe UI", 9)).pack(pady=(0, 22))
-        self.r_email = self.entry(card, "Email")
-        self.r_username = self.entry(card, "Логин")
-        self.r_display = self.entry(card, "Отображаемое имя")
-        self.r_password = self.entry(card, "Пароль", secret=True)
-        self.r_password2 = self.entry(card, "Повтор пароля", secret=True)
-        ttk.Button(card, text="Зарегистрироваться", command=self.do_register).pack(fill="x", padx=42, pady=(18, 8))
-        ttk.Button(card, text="Назад ко входу", style="Secondary.TButton", command=self.show_login).pack(fill="x", padx=42)
+        self.clear(); outer=tk.Frame(self,bg=BG); outer.pack(fill="both",expand=True)
+        card=tk.Frame(outer,bg=PANEL,highlightbackground="#29456f",highlightthickness=1); card.place(relx=.5,rely=.5,anchor="center",width=540,height=700)
+        self.logo_mark(card,60)
+        tk.Label(card,text="Создание аккаунта",bg=PANEL,fg=TEXT,font=("Segoe UI",22,"bold")).pack()
+        tk.Label(card,text="Создай профиль RMRP Помощника",bg=PANEL,fg=MUTED,font=("Segoe UI",9)).pack(pady=(3,20))
+        self.r_email=self.entry(card,"Email"); self.r_username=self.entry(card,"Логин"); self.r_display=self.entry(card,"Отображаемое имя"); self.r_password=self.entry(card,"Пароль",secret=True); self.r_password2=self.entry(card,"Повтор пароля",secret=True)
+        ttk.Button(card,text="ЗАРЕГИСТРИРОВАТЬСЯ",command=self.do_register).pack(fill="x",padx=48,pady=(16,9))
+        ttk.Button(card,text="← Назад ко входу",style="Secondary.TButton",command=lambda:(self.play_sound("click"),self.show_login())).pack(fill="x",padx=48)
 
     def do_login(self):
         email = self.email.get().strip()
@@ -271,50 +336,51 @@ class App(tk.Tk):
 
     def show_main(self):
         self.clear()
-        sidebar = tk.Frame(self, bg=PANEL, width=255, highlightbackground=BORDER, highlightthickness=1)
-        sidebar.pack(side="left", fill="y")
-        sidebar.pack_propagate(False)
-        tk.Label(sidebar, text="⚖  RMRP", bg=PANEL, fg=TEXT, font=("Segoe UI", 21, "bold")).pack(anchor="w", padx=22, pady=(24, 0))
-        tk.Label(sidebar, text="ПОМОЩНИК", bg=PANEL, fg=ACCENT, font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=24)
-        tk.Label(sidebar, text="by Kinzec X WOLF", bg=PANEL, fg=MUTED, font=("Segoe UI", 9)).pack(anchor="w", padx=24, pady=(2, 20))
-
-        self.content = tk.Frame(self, bg=BG)
-        self.content.pack(side="left", fill="both", expand=True)
-        self.nav_buttons = {}
-        base = [
-            ("⌂", "Главная"), ("▤", "Законодательство"), ("⌕", "Поиск"),
-            ("✦", "Помощь нейросети"), ("✓", "Проверь себя"), ("★", "Избранное"),
-            ("◷", "История"), ("⚙", "Настройки")
-        ]
-        role = self.prof.get("role", "USER")
-        if role in ("MODERATOR", "ADMIN", "FOUNDER"):
-            base.append(("⚠", "Жалобы"))
-        if role in ("ADMIN", "FOUNDER"):
-            base.append(("🛠", "Администрирование"))
-        for icon, title in base:
-            b = tk.Button(sidebar, text=f"{icon}   {title}", command=lambda t=title: self.page(t), anchor="w", bd=0, bg=PANEL, fg=MUTED, activebackground=PANEL2, activeforeground=TEXT, font=("Segoe UI", 10, "bold"), padx=20, pady=9, cursor="hand2")
-            b.pack(fill="x", padx=9, pady=1)
-            self.nav_buttons[title] = b
-        tk.Frame(sidebar, bg=BORDER, height=1).pack(fill="x", padx=20, pady=14)
-        name = self.prof.get("display_name") or self.prof.get("username") or "Пользователь"
-        tk.Label(sidebar, text=name, bg=PANEL, fg=TEXT, font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=22)
-        tk.Label(sidebar, text=role_label(role), bg=PANEL, fg=ACCENT2, font=("Segoe UI", 9, "bold")).pack(anchor="w", padx=22, pady=(2, 10))
-        ttk.Button(sidebar, text="Выйти", style="Danger.TButton", command=self.logout).pack(side="bottom", fill="x", padx=18, pady=18)
+        shell=tk.Frame(self,bg=BG); shell.pack(fill="both",expand=True)
+        sidebar=tk.Frame(shell,bg="#0d1522",width=258,highlightbackground="#1c304d",highlightthickness=1); sidebar.pack(side="left",fill="y"); sidebar.pack_propagate(False)
+        head=tk.Frame(sidebar,bg="#0d1522"); head.pack(fill="x",padx=20,pady=(22,18))
+        tk.Label(head,text="⚖",bg="#0d1522",fg=ACCENT2,font=("Segoe UI Symbol",27,"bold")).pack(side="left")
+        brand=tk.Frame(head,bg="#0d1522"); brand.pack(side="left",padx=9)
+        tk.Label(brand,text="RMRP ПОМОЩНИК",bg="#0d1522",fg=TEXT,font=("Segoe UI",12,"bold")).pack(anchor="w")
+        tk.Label(brand,text="by Kinzec X WOLF",bg="#0d1522",fg=ACCENT2,font=("Segoe UI",8,"bold")).pack(anchor="w")
+        tk.Frame(sidebar,bg="#203552",height=1).pack(fill="x",padx=18,pady=(0,12))
+        self.content=tk.Frame(shell,bg=BG); self.content.pack(side="left",fill="both",expand=True)
+        self.nav_buttons={}
+        base=[("⌂","Главная"),("▤","Законодательство"),("⌕","Поиск"),("✦","Помощь нейросети"),("✓","Проверь себя"),("★","Избранное"),("◷","История"),("⚙","Настройки")]
+        role=self.prof.get("role","USER")
+        if role in ("MODERATOR","ADMIN","FOUNDER"): base.append(("⚠","Жалобы"))
+        if role in ("ADMIN","FOUNDER"): base.append(("🛠","Администрирование"))
+        for icon,title in base: self.nav_buttons[title]=self.make_nav_button(sidebar,icon,title)
+        tk.Frame(sidebar,bg="#203552",height=1).pack(fill="x",padx=18,pady=14)
+        name=self.prof.get("display_name") or self.prof.get("username") or "Пользователь"
+        profile=tk.Frame(sidebar,bg="#111d30",highlightbackground="#223b5e",highlightthickness=1); profile.pack(fill="x",padx=14,pady=2)
+        tk.Label(profile,text=name,bg="#111d30",fg=TEXT,font=("Segoe UI",10,"bold")).pack(anchor="w",padx=12,pady=(10,1))
+        tk.Label(profile,text=role_label(role),bg="#111d30",fg=ACCENT2,font=("Segoe UI",8,"bold")).pack(anchor="w",padx=12,pady=(0,10))
+        out=tk.Button(sidebar,text="⎋   Выйти",command=self.logout,bd=0,bg="#3a1820",fg="#ff8796",activebackground="#54212c",font=("Segoe UI",9,"bold"),cursor="hand2",pady=10); out.pack(side="bottom",fill="x",padx=16,pady=16)
         self.page("Главная")
 
-    def header(self, title, subtitle=""):
-        top = tk.Frame(self.content, bg=BG)
-        top.pack(fill="x", padx=38, pady=(28, 18))
-        tk.Label(top, text=title, bg=BG, fg=TEXT, font=("Segoe UI", 28, "bold")).pack(anchor="w")
-        if subtitle:
-            tk.Label(top, text=subtitle, bg=BG, fg=MUTED, font=("Segoe UI", 10)).pack(anchor="w", pady=(3, 0))
+    def header(self,title,subtitle=""):
+        top=tk.Frame(self.content,bg=BG); top.pack(fill="x",padx=42,pady=(28,18))
+        row=tk.Frame(top,bg=BG); row.pack(fill="x")
+        tk.Label(row,text=title,bg=BG,fg=TEXT,font=("Segoe UI",27,"bold")).pack(side="left")
+        tk.Label(row,text=f"  {datetime.now().strftime('%H:%M')}",bg=BG,fg="#425775",font=("Segoe UI",9)).pack(side="left",pady=(12,0))
+        if subtitle: tk.Label(top,text=subtitle,bg=BG,fg=MUTED,font=("Segoe UI",10)).pack(anchor="w",pady=(3,0))
+        line=tk.Canvas(top,height=3,bg=BG,highlightthickness=0); line.pack(fill="x",pady=(16,0))
+        line.create_rectangle(0,0,0,3,fill=ACCENT,outline="")
+        target=max(80,min(360,top.winfo_width() or 360))
+        def grow(x=0):
+            try:
+                target=max(80,min(360,top.winfo_width() or 360)); x=min(target,x+28); line.delete("all"); line.create_rectangle(0,0,x,3,fill=ACCENT,outline="");
+                if x<target: self.after(20,lambda:grow(x))
+            except Exception: pass
+        self.after(10,grow)
 
     def page(self, title):
-        for w in self.content.winfo_children():
-            w.destroy()
-        for name, b in self.nav_buttons.items():
-            active = name == title
-            b.configure(bg=PANEL2 if active else PANEL, fg=TEXT if active else MUTED)
+        for w in self.content.winfo_children(): w.destroy()
+        self.play_sound("open")
+        for name,b in self.nav_buttons.items():
+            active=name==title
+            b.configure(bg="#17345d" if active else PANEL,fg="#ffffff" if active else MUTED)
         subtitles = {
             "Главная": "Центр подготовки и управления RMRP.",
             "Законодательство": "Законы, статьи и материалы сервера.",
@@ -355,32 +421,33 @@ class App(tk.Tk):
         scroll.pack(side="right", fill="y")
         return inner
 
-    def card(self, parent, title, text, button=None, command=None):
-        f = tk.Frame(parent, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
-        f.pack(fill="x", pady=6)
-        body = tk.Frame(f, bg=PANEL)
-        body.pack(side="left", fill="both", expand=True)
-        tk.Label(body, text=title, bg=PANEL, fg=TEXT, font=("Segoe UI", 13, "bold"), anchor="w").pack(fill="x", padx=18, pady=(15, 3))
-        tk.Label(body, text=text, bg=PANEL, fg=MUTED, font=("Segoe UI", 10), wraplength=850, justify="left", anchor="w").pack(fill="x", padx=18, pady=(0, 15))
+    def card(self,parent,title,text,button=None,command=None):
+        f=tk.Frame(parent,bg=PANEL,highlightbackground="#1d3556",highlightthickness=1); f.pack(fill="x",pady=6)
+        f.bind("<Enter>",lambda e:f.configure(highlightbackground="#2d5d9c")); f.bind("<Leave>",lambda e:f.configure(highlightbackground="#1d3556"))
+        body=tk.Frame(f,bg=PANEL); body.pack(side="left",fill="both",expand=True)
+        tk.Label(body,text=title,bg=PANEL,fg=TEXT,font=("Segoe UI",12,"bold"),anchor="w").pack(fill="x",padx=18,pady=(15,4))
+        tk.Label(body,text=text,bg=PANEL,fg=MUTED,font=("Segoe UI",9),wraplength=900,justify="left",anchor="w").pack(fill="x",padx=18,pady=(0,15))
         if button:
-            ttk.Button(f, text=button, command=command).pack(side="right", padx=15, pady=15)
+            b=tk.Button(f,text=button+"  →",command=lambda:(self.play_sound("click"),command()),bd=0,bg="#17345d",fg="#9cc6ff",activebackground=ACCENT,activeforeground="white",font=("Segoe UI",9,"bold"),cursor="hand2",padx=16,pady=8); b.pack(side="right",padx=15,pady=15)
+            b.bind("<Enter>",lambda e:b.configure(bg="#24538e")); b.bind("<Leave>",lambda e:b.configure(bg="#17345d"))
         return f
 
     def home(self):
-        wrap = self.scroll_area()
-        name = self.prof.get("display_name") or self.prof.get("username") or "Пользователь"
-        role = self.prof.get("role", "USER")
-        self.card(wrap, f"Добро пожаловать, {name}", f"Ваша роль: {role_label(role)}\nPremium: {'Да' if self.prof.get('premium') else 'Нет'}\nПодключение к Supabase активно.")
-        try:
-            anns = self.db.table("announcements", "id,title,content,type,created_at", {"is_active": "eq.true"}, "created_at.desc", 5)
-        except Exception:
-            anns = []
+        wrap=self.scroll_area()
+        name=self.prof.get("display_name") or self.prof.get("username") or "Пользователь"; role=self.prof.get("role","USER")
+        hero=tk.Frame(wrap,bg="#101d31",highlightbackground="#28538a",highlightthickness=1); hero.pack(fill="x",pady=(0,12))
+        tk.Label(hero,text=f"Добро пожаловать, {name}",bg="#101d31",fg=TEXT,font=("Segoe UI",21,"bold")).pack(anchor="w",padx=22,pady=(20,4))
+        tk.Label(hero,text="Твой центр подготовки, законодательства и тестирования RMRP.",bg="#101d31",fg=MUTED,font=("Segoe UI",10)).pack(anchor="w",padx=22,pady=(0,18))
+        stats=tk.Frame(hero,bg="#101d31"); stats.pack(fill="x",padx=16,pady=(0,16))
+        for label,value,accent in [("РОЛЬ",role_label(role),"#60a5fa"),("PREMIUM","АКТИВЕН" if self.prof.get("premium") else "НЕТ","#a78bfa"),("СИСТЕМА","ONLINE","#34d399")]:
+            c=tk.Frame(stats,bg="#0c1625",highlightbackground="#203a60",highlightthickness=1); c.pack(side="left",fill="x",expand=True,padx=5)
+            tk.Label(c,text=label,bg="#0c1625",fg="#607796",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=13,pady=(10,1)); tk.Label(c,text=value,bg="#0c1625",fg=accent,font=("Segoe UI",10,"bold")).pack(anchor="w",padx=13,pady=(0,10))
+        try: anns=self.db.table("announcements","id,title,content,type,created_at",{"is_active":"eq.true"},"created_at.desc",5)
+        except Exception: anns=[]
         if anns:
-            tk.Label(wrap, text="Объявления", bg=BG, fg=TEXT, font=("Segoe UI", 16, "bold")).pack(anchor="w", pady=(15, 6))
-            for a in anns:
-                self.card(wrap, a.get("title", "Объявление"), a.get("content", ""))
-        if role in ("ADMIN", "FOUNDER"):
-            self.card(wrap, "Панель управления доступна", "У вас есть раздел «Администрирование»: пользователи, роли, законы, тесты, объявления, жалобы и журнал действий.", "Открыть", lambda: self.page("Администрирование"))
+            tk.Label(wrap,text="Последние объявления",bg=BG,fg=TEXT,font=("Segoe UI",15,"bold")).pack(anchor="w",pady=(14,6))
+            for a in anns: self.card(wrap,a.get("title","Объявление"),a.get("content",""))
+        if role in ("ADMIN","FOUNDER"): self.card(wrap,"Панель управления","Управление пользователями, законами, тестами, объявлениями и журналом действий.","Открыть",lambda:self.page("Администрирование"))
 
     def laws(self):
         wrap = self.scroll_area()
