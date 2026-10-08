@@ -176,9 +176,10 @@ class App(tk.Tk):
         self.nav_buttons = {}
         self.content = None
         self._hover_jobs = {}
-        self._toast = None
+        self._toasts = []
         self._toast_after = None
         self._sound_cache = {}
+        self._prank_listener_started = False
         self.settings_path = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "RMRP-Pomoshnik", "settings.json")
         self.app_settings = self.load_app_settings()
         self._styles()
@@ -237,7 +238,7 @@ class App(tk.Tk):
         s.map("TNotebook.Tab", background=[("selected", "#1d4ed8")], foreground=[("selected", "white")])
 
     def load_app_settings(self):
-        defaults = {"sound_enabled": True, "sound_volume": 18, "hover_sound": False, "toast_duration": 3200}
+        defaults = {"sound_enabled": True, "sound_volume": 8, "hover_sound": False, "toast_duration": 3600}
         try:
             with open(self.settings_path, "r", encoding="utf-8") as f:
                 defaults.update(json.load(f))
@@ -273,8 +274,8 @@ class App(tk.Tk):
     def play_sound(self, kind="click"):
         if winsound is None or not self.app_settings.get("sound_enabled", True): return
         if kind == "hover" and not self.app_settings.get("hover_sound", False): return
-        volume=int(self.app_settings.get("sound_volume",18))
-        tones={"click":(740,32),"hover":(560,16),"success":(660,55),"error":(260,80),"open":(520,30)}
+        volume=int(self.app_settings.get("sound_volume",8))
+        tones={"click":(680,22),"hover":(520,12),"success":(610,38),"error":(250,55),"open":(480,20)}
         freq,dur=tones.get(kind,tones["click"])
         def run():
             try: winsound.PlaySound(self._make_tone(kind,freq,dur,volume), winsound.SND_FILENAME|winsound.SND_ASYNC)
@@ -282,35 +283,69 @@ class App(tk.Tk):
         threading.Thread(target=run,daemon=True).start()
 
     def notify(self, title, message, kind="info", duration=None):
-        if duration is None: duration=int(self.app_settings.get("toast_duration",3200))
-        if self._toast is not None:
-            try: self._toast.destroy()
-            except Exception: pass
-        colors={"info":("#3b82f6","ℹ"),"success":("#22c55e","✓"),"warning":("#f59e0b","!"),"error":("#ef4444","×")}
-        accent,icon=colors.get(kind,colors["info"])
-        toast=tk.Toplevel(self); toast.overrideredirect(True); toast.attributes("-topmost",True); toast.configure(bg="#0b1524")
-        toast.geometry("390x105")
-        toast.update_idletasks(); x=self.winfo_rootx()+self.winfo_width()-toast.winfo_width()-22; y=self.winfo_rooty()+self.winfo_height()-toast.winfo_height()-22; toast.geometry(f"+{x}+{y}")
-        outer=tk.Frame(toast,bg="#0b1524",highlightbackground="#203958",highlightthickness=1); outer.pack(fill="both",expand=True)
-        tk.Frame(outer,bg=accent,width=4).pack(side="left",fill="y")
-        tk.Label(outer,text=icon,bg="#0b1524",fg=accent,font=("Segoe UI",17,"bold"),width=3).pack(side="left",fill="y",padx=(5,0))
-        body=tk.Frame(outer,bg="#0b1524"); body.pack(side="left",fill="both",expand=True,padx=8,pady=11)
-        tk.Label(body,text=title,bg="#0b1524",fg=TEXT,font=("Segoe UI",10,"bold"),anchor="w").pack(fill="x")
-        tk.Label(body,text=message,bg="#0b1524",fg=MUTED,font=("Segoe UI",8),anchor="w",justify="left",wraplength=310).pack(fill="x",pady=(4,0))
-        progress=tk.Frame(toast,bg=accent,height=2); progress.place(x=0,y=103,width=390)
-        self._toast=toast
-        start=time.monotonic()
+        """Premium non-blocking toast notifications. Multiple toasts stack vertically."""
+        if duration is None:
+            duration = int(self.app_settings.get("toast_duration", 3600))
+        colors = {
+            "info": ("#3b82f6", "i"),
+            "success": ("#22c55e", "✓"),
+            "warning": ("#f59e0b", "!"),
+            "error": ("#ef4444", "×"),
+        }
+        accent, icon = colors.get(kind, colors["info"])
+        toast = tk.Toplevel(self)
+        toast.overrideredirect(True)
+        toast.attributes("-topmost", True)
+        toast.configure(bg="#081321")
+        width, height = 410, 104
+        outer = tk.Frame(toast, bg="#081321", highlightbackground="#23405f", highlightthickness=1)
+        outer.pack(fill="both", expand=True)
+        tk.Frame(outer, bg=accent, width=4).pack(side="left", fill="y")
+        tk.Label(outer, text=icon, bg="#081321", fg=accent, font=("Segoe UI", 16, "bold"), width=3).pack(side="left", fill="y", padx=(5, 0))
+        body = tk.Frame(outer, bg="#081321")
+        body.pack(side="left", fill="both", expand=True, padx=(2, 10), pady=10)
+        tk.Label(body, text=title, bg="#081321", fg=TEXT, font=("Segoe UI", 10, "bold"), anchor="w").pack(fill="x")
+        tk.Label(body, text=str(message), bg="#081321", fg="#a6b6ca", font=("Segoe UI", 8), anchor="w", justify="left", wraplength=330).pack(fill="x", pady=(4, 0))
+        progress = tk.Frame(toast, bg=accent, height=2)
+        progress.place(x=0, y=height-2, width=width)
+        close = tk.Button(toast, text="×", command=toast.destroy, bg="#081321", fg="#647b96", activebackground="#10223a", activeforeground=TEXT, bd=0, font=("Segoe UI", 11), cursor="hand2")
+        close.place(relx=1.0, x=-7, y=5, anchor="ne")
+        toast.update_idletasks()
+        self._toasts.append(toast)
+        self._reposition_toasts()
+        started = time.monotonic()
         def tick():
-            if not toast.winfo_exists(): return
-            left=max(0,1-(time.monotonic()-start)/(duration/1000))
-            progress.place_configure(width=max(1,int(390*left)))
-            if left<=0:
+            if not toast.winfo_exists():
+                if toast in self._toasts: self._toasts.remove(toast)
+                self._reposition_toasts()
+                return
+            left = max(0, 1 - (time.monotonic() - started) / max(0.1, duration / 1000))
+            progress.place_configure(width=max(1, int(width * left)))
+            if left <= 0:
                 try: toast.destroy()
                 except Exception: pass
-                self._toast=None
-            else: self.after(25,tick)
-        self.after(25,tick)
-        self.play_sound("success" if kind=="success" else "click")
+                if toast in self._toasts: self._toasts.remove(toast)
+                self._reposition_toasts()
+            else:
+                self.after(30, tick)
+        self.after(30, tick)
+        self.play_sound("success" if kind == "success" else "click")
+
+    def _reposition_toasts(self):
+        try:
+            self.update_idletasks()
+            right = self.winfo_rootx() + self.winfo_width() - 20
+            bottom = self.winfo_rooty() + self.winfo_height() - 20
+            for toast in list(self._toasts):
+                if not toast.winfo_exists():
+                    self._toasts.remove(toast); continue
+                toast.update_idletasks()
+                x = right - toast.winfo_width()
+                y = bottom - toast.winfo_height()
+                toast.geometry(f"+{x}+{y}")
+                bottom = y - 10
+        except Exception:
+            pass
 
     def animate_in(self, widget):
         widget.update_idletasks()
@@ -582,28 +617,66 @@ class App(tk.Tk):
         pages.get(title, self.home)()
 
     def scroll_area(self):
-        outer=tk.Frame(self.content,bg=BG); outer.pack(fill="both",expand=True,padx=38,pady=(0,20))
-        canvas=tk.Canvas(outer,bg=BG,highlightthickness=0,bd=0)
-        bar=tk.Canvas(outer,width=10,bg="#07111f",highlightthickness=0,bd=0)
-        inner=tk.Frame(canvas,bg=BG)
-        win_id=canvas.create_window((0,0),window=inner,anchor="nw")
+        outer = tk.Frame(self.content, bg=BG)
+        outer.pack(fill="both", expand=True, padx=28, pady=(0, 20))
+        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0, bd=0)
+        track = tk.Frame(outer, bg="#07111f", width=12)
+        track.pack(side="right", fill="y", padx=(8, 0))
+        track.pack_propagate(False)
+        thumb = tk.Canvas(track, width=12, bg="#07111f", highlightthickness=0, bd=0)
+        thumb.pack(fill="both", expand=True)
+        inner = tk.Frame(canvas, bg=BG)
+        win_id = canvas.create_window((0, 0), window=inner, anchor="nw")
+        dragging = {"active": False, "offset": 0}
         def refresh(_=None):
-            canvas.configure(scrollregion=canvas.bbox("all")); canvas.itemconfigure(win_id,width=max(canvas.winfo_width(),1)); self.after_idle(draw_bar)
-        def draw_bar():
-            bar.delete("all"); ch=canvas.winfo_height(); region=canvas.bbox("all")
-            if not region or region[3] <= ch:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+            canvas.itemconfigure(win_id, width=max(canvas.winfo_width(), 1))
+            draw_thumb()
+        def draw_thumb():
+            thumb.delete("all")
+            h = max(thumb.winfo_height(), 1)
+            region = canvas.bbox("all")
+            if not region or region[3] <= canvas.winfo_height():
                 return
-            total=region[3]; ratio=min(1,ch/total); thumb_h=max(48,int(ch*ratio)); y=0
-            first,last=canvas.yview(); y=int(first*ch);
-            bar.create_round_rect if False else None
-            bar.create_rectangle(2,y+2,8,y+thumb_h-2,fill="#315f96",outline="")
-        def on_scroll(*args): canvas.yview(*args); draw_bar()
+            ratio = canvas.winfo_height() / max(region[3], 1)
+            th = max(52, int(h * ratio))
+            first, _ = canvas.yview()
+            y = int(first * max(1, h - th))
+            thumb.create_rounded = None
+            thumb.create_rectangle(3, y + 2, 9, y + th - 2, fill="#2b5d91", outline="")
+            thumb.create_oval(3, y, 9, y + 6, fill="#2b5d91", outline="")
+            thumb.create_oval(3, y + th - 6, 9, y + th, fill="#2b5d91", outline="")
         def wheel(e):
-            canvas.yview_scroll(int(-e.delta/120),"units"); draw_bar()
-        inner.bind("<Configure>",refresh); canvas.bind("<Configure>",refresh); canvas.bind_all("<MouseWheel>",wheel)
-        canvas.configure(yscrollcommand=lambda first,last:(draw_bar()))
-        bar.bind("<Button-1>",lambda e: canvas.yview_moveto(max(0,min(1,e.y/max(1,bar.winfo_height())))))
-        canvas.pack(side="left",fill="both",expand=True); bar.pack(side="right",fill="y",padx=(6,0))
+            canvas.yview_scroll(int(-e.delta / 120), "units")
+            draw_thumb()
+        def thumb_press(e):
+            dragging["active"] = True
+            first, _ = canvas.yview()
+            h = max(thumb.winfo_height(), 1)
+            region = canvas.bbox("all")
+            ratio = canvas.winfo_height() / max(region[3], 1) if region else 1
+            th = max(52, int(h * ratio))
+            dragging["offset"] = e.y - first * max(1, h - th)
+        def thumb_drag(e):
+            if not dragging["active"]: return
+            h = max(thumb.winfo_height(), 1)
+            region = canvas.bbox("all")
+            if not region: return
+            ratio = canvas.winfo_height() / max(region[3], 1)
+            th = max(52, int(h * ratio))
+            pos = max(0, min(h - th, e.y - dragging["offset"]))
+            canvas.yview_moveto(pos / max(1, h - th))
+            draw_thumb()
+        thumb.bind("<ButtonPress-1>", thumb_press)
+        thumb.bind("<B1-Motion>", thumb_drag)
+        thumb.bind("<ButtonRelease-1>", lambda e: dragging.update(active=False))
+        inner.bind("<Configure>", refresh)
+        canvas.bind("<Configure>", refresh)
+        canvas.bind("<MouseWheel>", wheel)
+        canvas.bind("<Button-4>", lambda e: (canvas.yview_scroll(-3, "units"), draw_thumb()))
+        canvas.bind("<Button-5>", lambda e: (canvas.yview_scroll(3, "units"), draw_thumb()))
+        canvas.configure(yscrollcommand=lambda a,b: draw_thumb())
+        canvas.pack(side="left", fill="both", expand=True)
         return inner
 
     def card(self,parent,title,text,button=None,command=None):
@@ -917,7 +990,7 @@ class App(tk.Tk):
                 self.db.insert("test_answers", answers)
                 self.notify("Тест завершён", f"Результат: {score}%.", "success"); win.destroy()
             except Exception as e:
-                messagebox.showerror("Ошибка сохранения", str(e), parent=win)
+                self.notify("Ошибка сохранения", str(e), "error")
         ttk.Button(nav, text="← Назад", style="Secondary.TButton", command=prev_q).pack(side="left")
         ttk.Button(nav, text="Далее / Завершить", command=next_q).pack(side="right")
         render()
@@ -949,53 +1022,81 @@ class App(tk.Tk):
             self.card(wrap, "Ошибка", str(e))
 
     def profile_page(self):
-        wrap=self.scroll_area()
-        cover=tk.Frame(wrap,bg="#102744",height=145,highlightbackground="#245383",highlightthickness=1); cover.pack(fill="x",pady=(0,10)); cover.pack_propagate(False)
-        avatar=tk.Canvas(cover,width=92,height=92,bg="#102744",highlightthickness=0); avatar.place(x=28,y=28)
-        avatar.create_oval(4,4,88,88,fill="#0b1727",outline="#4d9cff",width=2); avatar.create_text(46,46,text=(self.prof.get("display_name") or self.prof.get("username") or "?")[0].upper(),fill="#8fc5ff",font=("Segoe UI",28,"bold"))
-        tk.Label(cover,text=self.prof.get("display_name") or self.prof.get("username") or "Пользователь",bg="#102744",fg=TEXT,font=("Segoe UI",19,"bold")).place(x=140,y=38)
-        tk.Label(cover,text=role_label(self.prof.get("role","USER")),bg="#102744",fg="#78b7ff",font=("Segoe UI",9,"bold")).place(x=142,y=72)
-        tk.Label(cover,text="● В сети",bg="#102744",fg="#35d58a",font=("Segoe UI",8,"bold")).place(x=142,y=98)
-        form=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); form.pack(fill="x",pady=8)
-        tk.Label(form,text="Профиль",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,12))
+        wrap = self.scroll_area()
+        name = self.prof.get("display_name") or self.prof.get("username") or "Пользователь"
+        avatar_url = self.prof.get("avatar_url") or ""
+        cover = tk.Frame(wrap, bg="#102744", height=185, highlightbackground="#245383", highlightthickness=1)
+        cover.pack(fill="x", pady=(0, 12)); cover.pack_propagate(False)
+        # Decorative cover layers
+        tk.Frame(cover, bg="#173b69", height=2).place(relx=0, rely=0.0, relwidth=.45)
+        tk.Frame(cover, bg="#2f80ed", height=2).place(relx=.45, rely=0.0, relwidth=.18)
+        avatar = tk.Canvas(cover, width=112, height=112, bg="#102744", highlightthickness=0)
+        avatar.place(x=28, y=42)
+        avatar.create_oval(3,3,109,109,fill="#081321",outline="#4d9cff",width=3)
+        avatar.create_text(56,56,text=name[:1].upper(),fill="#9bcaff",font=("Segoe UI",32,"bold"))
+        tk.Label(cover,text=name,bg="#102744",fg=TEXT,font=("Segoe UI",20,"bold")).place(x=162,y=55)
+        tk.Label(cover,text="@" + (self.prof.get("username") or "user"),bg="#102744",fg="#7fa2c8",font=("Segoe UI",9)).place(x=164,y=88)
+        tk.Label(cover,text=role_label(self.prof.get("role","USER")),bg="#102744",fg="#78b7ff",font=("Segoe UI",9,"bold")).place(x=164,y=113)
+        tk.Label(cover,text="● В сети",bg="#102744",fg="#35d58a",font=("Segoe UI",8,"bold")).place(x=164,y=140)
+        form = tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); form.pack(fill="x",pady=8)
+        tk.Label(form,text="Редактировать профиль",bg=PANEL,fg=TEXT,font=("Segoe UI",14,"bold")).pack(anchor="w",padx=22,pady=(18,3))
+        tk.Label(form,text="Изменения видны в профиле и верхней панели приложения.",bg=PANEL,fg=MUTED,font=("Segoe UI",8)).pack(anchor="w",padx=22,pady=(0,14))
         fields={}
-        for label,key in [("Отображаемое имя","display_name"),("Логин","username"),("Аватар — URL изображения","avatar_url"),("О себе","bio")]:
-            tk.Label(form,text=label,bg=PANEL,fg=MUTED,font=("Segoe UI",8,"bold")).pack(anchor="w",padx=20,pady=(7,4))
-            e=ttk.Entry(form); e.pack(fill="x",padx=20,ipady=7); e.insert(0,self.prof.get(key) or ""); fields[key]=e
+        for label,key in [("Отображаемое имя","display_name"),("Логин","username"),("Ссылка на аватар","avatar_url")]:
+            tk.Label(form,text=label,bg=PANEL,fg="#8ea3bb",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=22,pady=(7,4))
+            e=ttk.Entry(form); e.pack(fill="x",padx=22,ipady=8); e.insert(0,self.prof.get(key) or ""); fields[key]=e
             if key == "username": e.configure(state="readonly")
-        tk.Label(form,text=f"Роль: {role_label(self.prof.get('role','USER'))}    •    Статус: {self.prof.get('status','ACTIVE')}",bg=PANEL,fg="#7f9ab8",font=("Segoe UI",8)).pack(anchor="w",padx=20,pady=14)
+        tk.Label(form,text="О себе",bg=PANEL,fg="#8ea3bb",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=22,pady=(10,4))
+        bio=tk.Text(form,height=5,bg="#0e1827",fg=TEXT,insertbackground=TEXT,relief="flat",font=("Segoe UI",9),wrap="word",padx=10,pady=8)
+        bio.pack(fill="x",padx=22); bio.insert("1.0",self.prof.get("bio") or "")
+        info=tk.Frame(form,bg="#0e1827"); info.pack(fill="x",padx=22,pady=12)
+        tk.Label(info,text=f"{role_label(self.prof.get('role','USER'))}   •   {self.prof.get('status','ACTIVE')}",bg="#0e1827",fg="#7f9ab8",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=12,pady=9)
         def save():
-            values={k:fields[k].get().strip() for k in fields}
-            if not values["display_name"]: self.notify("Профиль","Имя не может быть пустым.","warning"); return
+            values={"display_name":fields["display_name"].get().strip(),"avatar_url":fields["avatar_url"].get().strip(),"bio":bio.get("1.0","end").strip()}
+            if not values["display_name"]:
+                self.notify("Профиль","Отображаемое имя не может быть пустым.","warning"); return
+            if len(values["display_name"]) > 40 or len(values["bio"]) > 500:
+                self.notify("Профиль","Имя — до 40 символов, описание — до 500.","warning"); return
             try:
                 self.db.update("profiles",{"id":f"eq.{self.user['id']}"},values)
                 self.prof.update(values); self.notify("Профиль сохранён","Изменения применены.","success"); self.show_main()
             except Exception as e: self.notify("Профиль",str(e),"error")
-        ttk.Button(form,text="Сохранить изменения",command=save).pack(anchor="e",padx=20,pady=(0,20))
+        actions=tk.Frame(form,bg=PANEL); actions.pack(fill="x",padx=22,pady=18)
+        ttk.Button(actions,text="Сохранить изменения",command=save).pack(side="right")
+        ttk.Button(actions,text="Сбросить",style="Secondary.TButton",command=self.profile_page).pack(side="right",padx=8)
 
     def settings(self):
         wrap=self.scroll_area()
         sound=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); sound.pack(fill="x",pady=(0,10))
-        tk.Label(sound,text="Звук интерфейса",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,4))
-        tk.Label(sound,text="Громкость была снижена. Здесь можно настроить её отдельно.",bg=PANEL,fg=MUTED,font=("Segoe UI",8)).pack(anchor="w",padx=20,pady=(0,14))
-        enabled=tk.BooleanVar(value=bool(self.app_settings.get("sound_enabled",True))); hover=tk.BooleanVar(value=bool(self.app_settings.get("hover_sound",False))); vol=tk.IntVar(value=int(self.app_settings.get("sound_volume",18)))
-        tk.Checkbutton(sound,text="Звуки нажатия",variable=enabled,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=20,pady=5)
-        tk.Checkbutton(sound,text="Звук при наведении",variable=hover,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=20,pady=5)
-        tk.Label(sound,text="Громкость",bg=PANEL,fg=MUTED,font=("Segoe UI",8,"bold")).pack(anchor="w",padx=20,pady=(12,0))
-        scale=tk.Scale(sound,from_=0,to=50,orient="horizontal",variable=vol,bg=PANEL,fg=TEXT,highlightthickness=0,troughcolor="#203552",activebackground=ACCENT,length=360,showvalue=True); scale.pack(anchor="w",padx=20,pady=4)
-        ttk.Button(sound,text="Проверить звук",command=lambda:self.play_sound("click")).pack(side="left",padx=20,pady=(8,18))
+        tk.Label(sound,text="Звук интерфейса",bg=PANEL,fg=TEXT,font=("Segoe UI",14,"bold")).pack(anchor="w",padx=22,pady=(18,4))
+        tk.Label(sound,text="Настрой громкость тихих кликов отдельно от звуков Windows.",bg=PANEL,fg=MUTED,font=("Segoe UI",8)).pack(anchor="w",padx=22,pady=(0,14))
+        enabled=tk.BooleanVar(value=bool(self.app_settings.get("sound_enabled",True))); hover=tk.BooleanVar(value=bool(self.app_settings.get("hover_sound",False))); vol=tk.IntVar(value=min(25,max(0,int(self.app_settings.get("sound_volume",8)))))
+        tk.Checkbutton(sound,text="Звуки нажатия",variable=enabled,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=22,pady=5)
+        tk.Checkbutton(sound,text="Звук при наведении",variable=hover,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=22,pady=5)
+        tk.Label(sound,text="Громкость кликов",bg=PANEL,fg="#8ea3bb",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=22,pady=(12,0))
+        scale=tk.Scale(sound,from_=0,to=25,orient="horizontal",variable=vol,bg=PANEL,fg=TEXT,highlightthickness=0,troughcolor="#203552",activebackground=ACCENT,length=400,showvalue=True); scale.pack(anchor="w",padx=22,pady=4)
+        btns=tk.Frame(sound,bg=PANEL); btns.pack(fill="x",padx=22,pady=(8,18))
+        ttk.Button(btns,text="Проверить звук",command=lambda:self.play_sound("click")).pack(side="left")
         def save_sound():
-            self.app_settings.update({"sound_enabled":enabled.get(),"hover_sound":hover.get(),"sound_volume":vol.get()}); self.save_app_settings(); self.notify("Настройки сохранены","Параметры звука применены.","success")
-        ttk.Button(sound,text="Сохранить",command=save_sound).pack(side="right",padx=20,pady=(8,18))
+            self.app_settings.update({"sound_enabled":enabled.get(),"hover_sound":hover.get(),"sound_volume":vol.get()}); self.save_app_settings(); self.notify("Настройки сохранены","Громкость применена.","success")
+        ttk.Button(btns,text="Сохранить",command=save_sound).pack(side="right")
         notif=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); notif.pack(fill="x",pady=8)
-        tk.Label(notif,text="Уведомления",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,4))
-        tk.Label(notif,text="Вместо стандартных окон приложение использует компактные уведомления справа внизу.",bg=PANEL,fg=MUTED,font=("Segoe UI",8)).pack(anchor="w",padx=20,pady=(0,10))
-        ttk.Button(notif,text="Показать пример",command=lambda:self.notify("RMRP Помощник","Так выглядят новые уведомления.","info")).pack(anchor="w",padx=20,pady=(0,18))
+        tk.Label(notif,text="Уведомления",bg=PANEL,fg=TEXT,font=("Segoe UI",14,"bold")).pack(anchor="w",padx=22,pady=(18,4))
+        tk.Label(notif,text="Все обычные сообщения приложения показываются компактными toast-уведомлениями.",bg=PANEL,fg=MUTED,font=("Segoe UI",8)).pack(anchor="w",padx=22,pady=(0,10))
+        duration=tk.IntVar(value=int(self.app_settings.get("toast_duration",3600)))
+        tk.Label(notif,text="Время показа (мс)",bg=PANEL,fg="#8ea3bb",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=22)
+        tk.Scale(notif,from_=1500,to=8000,orient="horizontal",variable=duration,bg=PANEL,fg=TEXT,highlightthickness=0,troughcolor="#203552",activebackground=ACCENT,length=400,showvalue=True).pack(anchor="w",padx=22,pady=4)
+        nb=tk.Frame(notif,bg=PANEL); nb.pack(fill="x",padx=22,pady=(6,18))
+        ttk.Button(nb,text="Показать пример",command=lambda:self.notify("Готово","Так выглядят уведомления нового интерфейса.","success")).pack(side="left")
+        ttk.Button(nb,text="Сохранить уведомления",command=lambda:(self.app_settings.update({"toast_duration":duration.get()}),self.save_app_settings(),self.notify("Настройки сохранены","Уведомления настроены.","success"))).pack(side="right")
         prank=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); prank.pack(fill="x",pady=8)
-        tk.Label(prank,text="Скример",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,4))
+        tk.Label(prank,text="Скример",bg=PANEL,fg=TEXT,font=("Segoe UI",14,"bold")).pack(anchor="w",padx=22,pady=(18,4))
+        tk.Label(prank,text="Розыгрыш работает только с разрешения получателя. Основатель может отправить его из админ-панели.",bg=PANEL,fg=MUTED,font=("Segoe UI",8),wraplength=850,justify="left").pack(anchor="w",padx=22,pady=(0,10))
         allow=tk.BooleanVar(value=bool(self.prof.get("allow_pranks")))
-        tk.Checkbutton(prank,text="Разрешаю внутриигровые розыгрыши",variable=allow,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=20,pady=8)
-        ttk.Button(prank,text="Сохранить разрешение",command=lambda:self.save_pranks(allow.get())).pack(anchor="w",padx=20,pady=(0,18))
+        tk.Checkbutton(prank,text="Разрешаю внутриигровые розыгрыши",variable=allow,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=22,pady=6)
+        pb=tk.Frame(prank,bg=PANEL); pb.pack(fill="x",padx=22,pady=(2,18))
+        ttk.Button(pb,text="Сохранить разрешение",command=lambda:self.save_pranks(allow.get())).pack(side="left")
+        ttk.Button(pb,text="Проверить скример",style="Secondary.TButton",command=self.show_screamer).pack(side="left",padx=8)
         self.card(wrap,"Версия",f"{APP_NAME} v{APP_VERSION}\n{APP_PUBLISHER}\nWindows release build")
 
     def change_display_name(self):
@@ -1044,7 +1145,7 @@ class App(tk.Tk):
                 try:
                     self.db.update("reports", {"id": f"eq.{report['id']}"}, {"status": cb.get(), "resolved_at": datetime.utcnow().isoformat()+"Z" if cb.get() in ("RESOLVED","REJECTED") else None})
                     self.log("Изменён статус жалобы", "reports", report["id"]); win.destroy(); self.reports_page()
-                except Exception as e: messagebox.showerror("Жалоба", str(e), parent=win)
+                except Exception as e: self.notify("Жалоба", str(e), "error")
             ttk.Button(win, text="Сохранить", command=save).pack(pady=8)
         ttk.Button(win, text="Закрыть", style="Secondary.TButton", command=win.destroy).pack(pady=8)
 
@@ -1069,6 +1170,7 @@ class App(tk.Tk):
         ttk.Button(actions, text="Скример: разрешение", command=lambda: self.toggle_prank(tree)).pack(side="left", padx=4)
         if self.prof.get("role") == "FOUNDER":
             ttk.Button(actions, text="⚡ Отправить скример", command=lambda: self.send_screamer(tree)).pack(side="left", padx=4)
+            ttk.Button(actions, text="⚡ Тест на себе", style="Secondary.TButton", command=self.show_screamer).pack(side="left", padx=4)
         self.refresh_admin_users(tree)
 
     def refresh_admin_users(self, tree):
@@ -1102,11 +1204,11 @@ class App(tk.Tk):
         def save():
             new_role = values[cb.current()]
             if self.prof.get("role") != "FOUNDER" and new_role in ("FOUNDER","ADMIN"):
-                messagebox.showerror(APP_NAME, "Администратор может выдавать только MODERATOR/PREMIUM/USER.", parent=win); return
+                self.notify(APP_NAME, "Администратор может выдавать только MODERATOR/PREMIUM/USER.", "error"); return
             try:
                 self.db.update("profiles", {"id": f"eq.{uid}"}, {"role": new_role})
                 self.log("Изменена роль", "profiles", uid, {"role": new_role}); win.destroy(); self.refresh_admin_users(tree)
-            except Exception as e: messagebox.showerror("Роль", str(e), parent=win)
+            except Exception as e: self.notify("Роль", str(e), "error")
         ttk.Button(win, text="Сохранить", command=save).pack(pady=10)
 
     def change_user_status(self, tree):
@@ -1156,6 +1258,8 @@ class App(tk.Tk):
 
     def start_prank_listener(self):
         if not self.user.get("id"): return
+        if getattr(self, "_prank_listener_started", False): return
+        self._prank_listener_started = True
         def poll():
             try:
                 rows=self.db.table("prank_events","id,kind,created_at",{"target_user_id":f"eq.{self.user['id']}","consumed_at":"is.null"},"created_at.asc",5)
@@ -1164,22 +1268,38 @@ class App(tk.Tk):
                     self.after(0,self.show_screamer)
             except Exception:
                 pass
-            if self.user.get("id"): self.after(3000,poll)
-        self.after(1500,poll)
+            if self.user.get("id"): self.after(2500,poll)
+            else: self._prank_listener_started = False
+        self.after(1000,poll)
 
     def show_screamer(self):
-        if not self.prof.get("allow_pranks") and self.prof.get("role") != "FOUNDER": return
-        win=tk.Toplevel(self); win.overrideredirect(True); win.attributes("-topmost",True); win.configure(bg="#03060b")
+        if not self.prof.get("allow_pranks") and self.prof.get("role") != "FOUNDER":
+            self.notify("Скример","Сначала разреши розыгрыши в настройках.","warning"); return
+        win=tk.Toplevel(self); win.overrideredirect(True); win.attributes("-topmost",True); win.configure(bg="#02050a")
         sw,sh=self.winfo_screenwidth(),self.winfo_screenheight(); win.geometry(f"{sw}x{sh}+0+0")
-        canvas=tk.Canvas(win,bg="#03060b",highlightthickness=0); canvas.pack(fill="both",expand=True)
-        canvas.create_oval(sw*.35,sh*.18,sw*.65,sh*.62,fill="#07172b",outline="#3b82f6",width=5)
-        canvas.create_text(sw/2,sh*.40,text="⚡",fill="#62a8ff",font=("Segoe UI Symbol",110,"bold"))
-        canvas.create_text(sw/2,sh*.68,text="RMRP СКРИМЕР",fill="#f4f7fb",font=("Segoe UI",34,"bold"))
-        canvas.create_text(sw/2,sh*.75,text="Розыгрыш от Основателя",fill="#8aa4c2",font=("Segoe UI",15))
-        try:
-            if winsound: winsound.Beep(880,120); winsound.Beep(440,180)
-        except Exception: pass
-        win.bind("<Escape>",lambda e:win.destroy()); win.after(4200,win.destroy)
+        canvas=tk.Canvas(win,bg="#02050a",highlightthickness=0); canvas.pack(fill="both",expand=True)
+        canvas.create_rectangle(0,0,sw,sh,fill="#02050a",outline="")
+        glow=["#07172b","#0b2546","#102f57","#0b2546"]
+        for i,col in enumerate(glow):
+            r=min(sw,sh)*(.12+i*.06); canvas.create_oval(sw/2-r,sh*.42-r,sw/2+r,sh*.42+r,fill=col,outline="")
+        shield=[(sw/2,sh*.16),(sw*.64,sh*.25),(sw*.60,sh*.58),(sw/2,sh*.72),(sw*.40,sh*.58),(sw*.36,sh*.25)]
+        canvas.create_polygon(shield,fill="#061324",outline="#3b82f6",width=5)
+        canvas.create_text(sw/2,sh*.43,text="⚡",fill="#8bc6ff",font=("Segoe UI Symbol",100,"bold"))
+        canvas.create_text(sw/2,sh*.79,text="RMRP СКРИМЕР",fill="#f4f7fb",font=("Segoe UI",32,"bold"))
+        canvas.create_text(sw/2,sh*.85,text="Розыгрыш от Основателя",fill="#7894b5",font=("Segoe UI",14))
+        close=tk.Button(win,text="×",command=win.destroy,bg="#07111f",fg="#9ab2cc",activebackground="#182c45",activeforeground=TEXT,bd=0,font=("Segoe UI",18),cursor="hand2")
+        close.place(relx=1,x=-18,y=14,anchor="ne")
+        def flash(i=0):
+            if not win.winfo_exists(): return
+            if i>=8: return
+            canvas.configure(bg="#1b0710" if i%2 else "#02050a")
+            win.after(80,lambda:flash(i+1))
+        flash()
+        if winsound and self.app_settings.get("sound_enabled",True):
+            try:
+                winsound.Beep(740,90); winsound.Beep(360,140); winsound.Beep(880,110)
+            except Exception: pass
+        win.bind("<Escape>",lambda e:win.destroy()); win.after(5000,win.destroy)
 
     def admin_laws(self, parent):
         row=tk.Frame(parent,bg=BG); row.pack(fill="x",pady=10)
@@ -1200,7 +1320,7 @@ class App(tk.Tk):
             try:
                 rows = self.db.table(table, select, {}, order, 300)
                 for r in rows: tree.insert("", "end", values=tuple(r.get(c) for c in columns))
-            except Exception as e: messagebox.showerror(table, str(e))
+            except Exception as e: self.notify(table, str(e), "error")
         ttk.Button(parent, text="Обновить", command=refresh).pack(anchor="e", pady=6)
         refresh()
         return tree
@@ -1269,7 +1389,7 @@ class App(tk.Tk):
         self.header(title, subtitle)
 
     def logout(self):
-        self.db.auth_logout(); self.user = {}; self.prof = {}; self.show_login()
+        self.db.auth_logout(); self.user = {}; self.prof = {}; self._prank_listener_started = False; self.show_login()
 
 
 if __name__ == "__main__":
