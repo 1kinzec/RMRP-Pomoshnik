@@ -1,5 +1,5 @@
 #define MyAppName "RMRP Помощник"
-#define MyAppVersion "1.3.0"
+#define MyAppVersion "1.4.0"
 #define MyAppPublisher "Kinzec X WOLF"
 #define MyAppExeName "RMRP_Pomoshnik.exe"
 
@@ -11,15 +11,28 @@ AppPublisher={#MyAppPublisher}
 DefaultDirName={autopf}\RMRP Помощник
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+
 OutputDir=output
 OutputBaseFilename=RMRP-Pomoshnik-Setup-{#MyAppVersion}
+
 Compression=lzma2
 SolidCompression=yes
-WizardStyle=modern
-WizardImageFile=wizard.bmp
-WizardSmallImageFile=wizard-small.bmp
+
+WizardStyle=modern dark includetitlebar hidebevels
+WizardSizePercent=120,120
+
+WizardBackColor=#07111F
+WizardBackImageFile=assets\setup-bg.bmp
+WizardBackImageOpacity=165
+
+WizardImageFile=
+WizardSmallImageFile=
+
+SetupIconFile=assets\rmrp.ico
+
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
+
 PrivilegesRequired=admin
 DisableWelcomePage=no
 
