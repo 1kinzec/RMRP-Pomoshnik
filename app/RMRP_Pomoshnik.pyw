@@ -533,47 +533,44 @@ class App(tk.Tk):
     def show_main(self):
         self.clear()
         shell=tk.Frame(self,bg=BG); shell.pack(fill="both",expand=True); self.titlebar(shell)
-        sidebar=tk.Frame(shell,bg="#081321",width=236,highlightbackground="#17304d",highlightthickness=1); sidebar.pack(side="left",fill="y"); sidebar.pack_propagate(False)
-        head=tk.Frame(sidebar,bg="#081321"); head.pack(fill="x",padx=17,pady=(20,18))
-        tk.Label(head,text="⚖",bg="#081321",fg="#62a8ff",font=("Segoe UI Symbol",28,"bold")).pack(side="left")
-        brand=tk.Frame(head,bg="#081321"); brand.pack(side="left",padx=8)
-        tk.Label(brand,text="RMRP ПОМОЩНИК",bg="#081321",fg=TEXT,font=("Segoe UI",11,"bold")).pack(anchor="w")
-        tk.Label(brand,text="by Kinzec X WOLF",bg="#081321",fg="#5e9fff",font=("Segoe UI",7,"bold")).pack(anchor="w")
-        tk.Frame(sidebar,bg="#1b3658",height=1).pack(fill="x",padx=15,pady=(0,12))
+        sidebar=tk.Frame(shell,bg="#081321",width=230,highlightbackground="#17304d",highlightthickness=1); sidebar.pack(side="left",fill="y"); sidebar.pack_propagate(False)
+        head=tk.Frame(sidebar,bg="#081321"); head.pack(fill="x",padx=16,pady=(18,16))
+        logo=tk.Canvas(head,width=42,height=42,bg="#081321",highlightthickness=0); logo.pack(side="left")
+        logo.create_oval(2,2,40,40,fill="#102b4b",outline="#2f80ed",width=1)
+        logo.create_text(21,21,text="⚖",fill="#68aefc",font=("Segoe UI Symbol",19,"bold"))
+        brand=tk.Frame(head,bg="#081321"); brand.pack(side="left",padx=9)
+        tk.Label(brand,text="RMRP ПОМОЩНИК",bg="#081321",fg=TEXT,font=("Segoe UI",10,"bold")).pack(anchor="w")
+        tk.Label(brand,text="by Kinzec X WOLF",bg="#081321",fg="#5e9fff",font=("Segoe UI",7,"bold")).pack(anchor="w",pady=(2,0))
+        tk.Frame(sidebar,bg="#1b3658",height=1).pack(fill="x",padx=14,pady=(0,10))
         self.content=tk.Frame(shell,bg="#091321"); self.content.pack(side="left",fill="both",expand=True)
         self.nav_buttons={}
         base=[("⌂","Главная"),("▤","Законодательство"),("⌕","Поиск"),("✦","Помощь нейросети"),("✓","Проверь себя"),("★","Избранное"),("◷","История"),("♙","Профиль")]
         role=self.prof.get("role","USER")
-        for icon,title in base:
-            self.nav_buttons[title]=self.make_nav_button(sidebar,icon,title)
+        for icon,title in base: self.nav_buttons[title]=self.make_nav_button(sidebar,icon,title)
         spacer=tk.Frame(sidebar,bg="#081321"); spacer.pack(fill="both",expand=True)
-        if role in ("MODERATOR","ADMIN","FOUNDER"):
-            self.nav_buttons["Жалобы"]=self.make_nav_button(sidebar,"⚠","Жалобы")
-        if role in ("ADMIN","FOUNDER"):
-            self.nav_buttons["Администрирование"]=self.make_nav_button(sidebar,"⚙","Администрирование")
+        if role in ("MODERATOR","ADMIN","FOUNDER"): self.nav_buttons["Жалобы"]=self.make_nav_button(sidebar,"⚠","Жалобы")
+        if role in ("ADMIN","FOUNDER"): self.nav_buttons["Администрирование"]=self.make_nav_button(sidebar,"⚙","Администрирование")
         self.nav_buttons["Настройки"]=self.make_nav_button(sidebar,"⚙","Настройки")
-        tk.Frame(sidebar,bg="#1b3658",height=1).pack(fill="x",padx=15,pady=12)
+        tk.Frame(sidebar,bg="#1b3658",height=1).pack(fill="x",padx=14,pady=10)
         name=self.prof.get("display_name") or self.prof.get("username") or "Пользователь"
-        profile=tk.Frame(sidebar,bg="#0d1c2e",highlightbackground="#1d4168",highlightthickness=1); profile.pack(fill="x",padx=12,pady=2)
+        profile=tk.Frame(sidebar,bg="#0d1c2e",highlightbackground="#1d4168",highlightthickness=1); profile.pack(fill="x",padx=10,pady=2)
         tk.Label(profile,text="●  ONLINE",bg="#0d1c2e",fg="#35d58a",font=("Segoe UI",7,"bold")).pack(anchor="w",padx=11,pady=(8,0))
-        tk.Label(profile,text=name,bg="#0d1c2e",fg=TEXT,font=("Segoe UI",10,"bold")).pack(anchor="w",padx=11,pady=(2,0))
+        tk.Label(profile,text=name,bg="#0d1c2e",fg=TEXT,font=("Segoe UI",9,"bold")).pack(anchor="w",padx=11,pady=(3,0))
         tk.Label(profile,text=role_label(role),bg="#0d1c2e",fg="#79adf2",font=("Segoe UI",7,"bold")).pack(anchor="w",padx=11,pady=(0,9))
-        out=tk.Button(sidebar,text="⎋   Выйти",command=self.logout,bd=0,bg="#281923",fg="#ff7d91",activebackground="#442431",font=("Segoe UI",9,"bold"),cursor="hand2",pady=9); out.pack(fill="x",padx=12,pady=12)
+        out=tk.Button(sidebar,text="⎋   Выйти",command=self.logout,bd=0,bg="#281923",fg="#ff7d91",activebackground="#442431",font=("Segoe UI",9,"bold"),cursor="hand2",pady=9); out.pack(fill="x",padx=10,pady=10)
         self.page("Главная")
-
     def header(self,title,subtitle=""):
-        top=tk.Frame(self.content,bg="#091321"); top.pack(fill="x",padx=28,pady=(18,12))
+        top=tk.Frame(self.content,bg="#091321"); top.pack(fill="x",padx=28,pady=(17,12))
         row=tk.Frame(top,bg="#091321"); row.pack(fill="x")
         left=tk.Frame(row,bg="#091321"); left.pack(side="left")
-        tk.Label(left,text=title,bg="#091321",fg=TEXT,font=("Segoe UI",21,"bold")).pack(anchor="w")
-        if subtitle: tk.Label(left,text=subtitle,bg="#091321",fg="#748aa6",font=("Segoe UI",8)).pack(anchor="w",pady=(2,0))
+        tk.Label(left,text=title,bg="#091321",fg=TEXT,font=("Segoe UI",22,"bold")).pack(anchor="w")
+        if subtitle: tk.Label(left,text=subtitle,bg="#091321",fg="#7187a2",font=("Segoe UI",8)).pack(anchor="w",pady=(3,0))
         userbox=tk.Frame(row,bg="#0d1c2e",highlightbackground="#1b3c60",highlightthickness=1); userbox.pack(side="right")
-        tk.Label(userbox,text="●",bg="#0d1c2e",fg="#35d58a",font=("Segoe UI",10)).pack(side="left",padx=(9,3),pady=6)
-        tk.Label(userbox,text=self.prof.get("display_name") or self.prof.get("username") or "Пользователь",bg="#0d1c2e",fg=TEXT,font=("Segoe UI",8,"bold")).pack(side="left",padx=(0,10),pady=6)
+        tk.Label(userbox,text="●",bg="#0d1c2e",fg="#35d58a",font=("Segoe UI",9)).pack(side="left",padx=(10,4),pady=7)
+        tk.Label(userbox,text=self.prof.get("display_name") or self.prof.get("username") or "Пользователь",bg="#0d1c2e",fg=TEXT,font=("Segoe UI",8,"bold")).pack(side="left",padx=(0,12),pady=7)
         line=tk.Frame(top,bg="#17385f",height=1); line.pack(fill="x",pady=(12,0))
-        accent=tk.Frame(top,bg=ACCENT,height=2); accent.place(x=0,y=top.winfo_height()-2,width=120)
+        accent=tk.Frame(top,bg=ACCENT,height=2); accent.place(x=0,y=top.winfo_height()-2,width=90)
         self.after(50,lambda: self._animate_accent(accent,top))
-
     def _animate_accent(self, accent, parent, width=60):
         try:
             target=max(180,min(420,parent.winfo_width()))
@@ -705,27 +702,31 @@ class App(tk.Tk):
 
     def home(self):
         wrap=self.scroll_area(); name=self.prof.get("display_name") or self.prof.get("username") or "Пользователь"
-        hero=tk.Frame(wrap,bg="#0d1c2e",highlightbackground="#214d7c",highlightthickness=1); hero.pack(fill="x",pady=(0,14))
-        tk.Label(hero,text=f"Добро пожаловать, {name}!",bg="#0d1c2e",fg=TEXT,font=("Segoe UI",19,"bold")).pack(anchor="w",padx=22,pady=(18,2))
-        tk.Label(hero,text="Сегодня отличный день для новых знаний.",bg="#0d1c2e",fg="#7e96b4",font=("Segoe UI",9)).pack(anchor="w",padx=22,pady=(0,18))
-        grid=tk.Frame(wrap,bg="#091321"); grid.pack(fill="x")
-        items=[("▤","Законодательство","Законы RMRP","Открыть",lambda:self.page("Законодательство"),"#35a9ff"),("⌕","Поиск","Быстрый поиск по знаниям","Открыть",lambda:self.page("Поиск"),"#7e8dff"),("✦","Нейросеть","Задай вопрос ИИ","Открыть",lambda:self.page("Помощь нейросети"),"#31d5ae"),("▣","Тесты","Проверь свои знания","Начать",lambda:self.page("Проверь себя"),"#f2a43b")]
+        hero=tk.Frame(wrap,bg="#0d1d30",highlightbackground="#214d7c",highlightthickness=1); hero.pack(fill="x",pady=(0,14))
+        tk.Frame(hero,bg="#2f80ed",width=4).pack(side="left",fill="y")
+        body=tk.Frame(hero,bg="#0d1d30"); body.pack(fill="both",expand=True,padx=22,pady=18)
+        tk.Label(body,text=f"Добро пожаловать, {name}",bg="#0d1d30",fg=TEXT,font=("Segoe UI",20,"bold")).pack(anchor="w")
+        tk.Label(body,text="Изучай законы RMRP, находи нужную статью и проверяй знания.",bg="#0d1d30",fg="#7f97b5",font=("Segoe UI",9)).pack(anchor="w",pady=(4,14))
+        quick=tk.Frame(body,bg="#0d1d30"); quick.pack(anchor="w")
+        for text,cmd in [("Открыть законодательство",lambda:self.page("Законодательство")),("Задать вопрос ИИ",lambda:self.page("Помощь нейросети"))]:
+            ttk.Button(quick,text=text,command=cmd).pack(side="left",padx=(0,8))
+        tk.Label(wrap,text="Быстрый доступ",bg=BG,fg=TEXT,font=("Segoe UI",12,"bold")).pack(anchor="w",pady=(2,7))
+        grid=tk.Frame(wrap,bg=BG); grid.pack(fill="x")
+        items=[("⚖","Законодательство","Актуальные законы и статьи RMRP","Открыть",lambda:self.page("Законодательство"),"#3b9cff"),("⌕","Поиск","Найти статью по номеру или ключевым словам","Открыть",lambda:self.page("Поиск"),"#777ff7"),("✦","Помощь нейросети","Ответы только на основе базы RMRP","Спросить",lambda:self.page("Помощь нейросети"),"#28d0a2"),("✓","Проверь себя","Тесты по законодательству","Начать",lambda:self.page("Проверь себя"),"#e9a24a")]
         for i,(ic,t,d,bt,cmd,ac) in enumerate(items):
-            tile=self.tile(grid,t,d,ic,ac,bt,cmd); tile.grid(row=0,column=i,padx=(0 if i==0 else 5,5 if i<3 else 0),sticky="nsew"); tile.configure(height=150); grid.grid_columnconfigure(i,weight=1)
-        lower=tk.Frame(wrap,bg="#091321"); lower.pack(fill="both",expand=True,pady=(14,0))
-        for title,icon,accent in [("Последнее изученное","⚖","#58a8ff"),("Объявления","▣","#f1a53d")]:
-            box=tk.Frame(lower,bg="#0d1b2c",highlightbackground="#1a385a",highlightthickness=1); box.pack(side="left",fill="both",expand=True,padx=(0,7) if title.startswith("Послед") else (7,0))
-            tk.Label(box,text=title,bg="#0d1b2c",fg=TEXT,font=("Segoe UI",11,"bold")).pack(anchor="w",padx=16,pady=(14,8))
-            if title.startswith("Послед"):
-                rows=[("ФЗ «О полиции»","Статья 12. Порядок применения физической силы"),("УК РФ","Статья 228. Незаконный оборот наркотических средств"),("ФЗ «О ФСВНГ»","Статья 24. Полномочия войск национальной гвардии")]
-            else:
-                try: rows=[(a.get("title","Объявление"),(a.get("content") or "")[:100]) for a in self.db.table("announcements","title,content",{"is_active":"eq.true"},"created_at.desc",3)]
-                except Exception: rows=[]
-                if not rows: rows=[("Обновление законодательства","Следите за актуальными материалами RMRP.")]
-            for a,b in rows:
-                r=tk.Frame(box,bg="#102136"); r.pack(fill="x",padx=12,pady=4); tk.Label(r,text=icon,bg="#102136",fg=accent,font=("Segoe UI Symbol",12)).pack(side="left",padx=10,pady=8); qf=tk.Frame(r,bg="#102136"); qf.pack(side="left",fill="x",expand=True); tk.Label(qf,text=a,bg="#102136",fg=TEXT,font=("Segoe UI",8,"bold")).pack(anchor="w",pady=(7,0)); tk.Label(qf,text=b,bg="#102136",fg="#7189a7",font=("Segoe UI",7),wraplength=330,justify="left").pack(anchor="w",pady=(0,7))
+            tile=self.tile(grid,t,d,ic,ac,bt,cmd); tile.grid(row=0,column=i,padx=(0 if i==0 else 5,5 if i<3 else 0),sticky="nsew"); tile.configure(height=155); grid.grid_columnconfigure(i,weight=1)
+        lower=tk.Frame(wrap,bg=BG); lower.pack(fill="x",pady=(16,0))
+        left=tk.Frame(lower,bg="#0d1b2c",highlightbackground="#1a385a",highlightthickness=1); left.pack(side="left",fill="both",expand=True,padx=(0,7))
+        right=tk.Frame(lower,bg="#0d1b2c",highlightbackground="#1a385a",highlightthickness=1); right.pack(side="left",fill="both",expand=True,padx=(7,0))
+        tk.Label(left,text="Последнее изученное",bg="#0d1b2c",fg=TEXT,font=("Segoe UI",11,"bold")).pack(anchor="w",padx=16,pady=(14,8))
+        for a,b in [("ФЗ «О полиции»","Статья 12 • Порядок применения физической силы"),("ФЗ «О ФСВНГ»","Полномочия войск национальной гвардии"),("Процессуальный кодекс","Порядок задержания и процессуальные права")]:
+            r=tk.Frame(left,bg="#102136"); r.pack(fill="x",padx=12,pady=4); tk.Label(r,text="⚖",bg="#102136",fg="#58a8ff",font=("Segoe UI Symbol",12)).pack(side="left",padx=10,pady=9); tk.Label(r,text=a,bg="#102136",fg=TEXT,font=("Segoe UI",8,"bold")).pack(anchor="w",pady=(7,0));
+            # description in same row, compact
+            tk.Label(r,text=b,bg="#102136",fg="#7189a7",font=("Segoe UI",7)).pack(anchor="w",pady=(0,7))
+        tk.Label(right,text="Состояние системы",bg="#0d1b2c",fg=TEXT,font=("Segoe UI",11,"bold")).pack(anchor="w",padx=16,pady=(14,8))
+        for label,val,ac in [("Supabase","Подключение аккаунта","#35d58a"),("Законодательство","База RMRP","#3b9cff"),("Профиль",role_label(self.prof.get("role","USER")),"#9d8cff")]:
+            r=tk.Frame(right,bg="#102136"); r.pack(fill="x",padx=12,pady=4); tk.Label(r,text="●",bg="#102136",fg=ac,font=("Segoe UI",9)).pack(side="left",padx=10); tk.Label(r,text=label,bg="#102136",fg=TEXT,font=("Segoe UI",8,"bold")).pack(side="left"); tk.Label(r,text=val,bg="#102136",fg="#7189a7",font=("Segoe UI",7)).pack(side="right",padx=10)
         if self.prof.get("role") in ("ADMIN","FOUNDER"): self.card(wrap,"Администрирование","Управление пользователями, законами, тестами и системой.","Открыть",lambda:self.page("Администрирование"))
-
     def _fetch_rmrp_articles(self, url):
         req=urllib.request.Request(url,headers={"User-Agent":"RMRP-Pomoshnik/1.4.0"})
         with urllib.request.urlopen(req,timeout=25) as r:
@@ -793,22 +794,24 @@ class App(tk.Tk):
         threading.Thread(target=worker,daemon=True).start()
 
     def laws(self):
-        wrap=self.scroll_area(); toolbar=tk.Frame(wrap,bg="#0d1b2c",highlightbackground="#1a385a",highlightthickness=1); toolbar.pack(fill="x",pady=(0,12))
-        ttk.Entry(toolbar).pack(side="left",fill="x",expand=True,padx=10,pady=8,ipady=3); ttk.Button(toolbar,text="Обновить",command=self.laws).pack(side="right",padx=8,pady=7)
+        wrap=self.scroll_area()
+        toolbar=tk.Frame(wrap,bg="#0d1b2c",highlightbackground="#1a385a",highlightthickness=1); toolbar.pack(fill="x",pady=(0,12))
+        e=ttk.Entry(toolbar); e.pack(side="left",fill="x",expand=True,padx=12,pady=10,ipady=3)
+        e.insert(0,"Поиск по законодательству…")
+        ttk.Button(toolbar,text="Найти",command=lambda:self.page("Поиск")).pack(side="right",padx=8,pady=8)
         if self.prof.get("role") in ("ADMIN","FOUNDER"):
-            ttk.Button(toolbar,text="⟳ Синхронизировать RMRP",command=self.sync_rmrp_laws).pack(side="right",padx=4,pady=7)
-            ttk.Button(toolbar,text="+ Закон",command=self.add_law).pack(side="right",pady=7)
+            ttk.Button(toolbar,text="⟳ Синхронизировать RMRP",command=self.sync_rmrp_laws).pack(side="right",padx=4,pady=8)
         try: laws=self.db.table("laws","id,name,short_name,law_number,description,is_active",{"is_active":"eq.true"},"name.asc")
         except Exception as e: self.card(wrap,"Ошибка загрузки",str(e)); return
-        grid=tk.Frame(wrap,bg="#091321"); grid.pack(fill="x")
         if not laws:
-            self.card(grid,"Законодательство RMRP пока не загружено","Это не пустые страницы: нажмите «Синхронизировать RMRP», и приложение загрузит актуальные тексты и статьи с официального форума RMRP.","Загрузить законы",self.sync_rmrp_laws)
-            return
+            self.card(wrap,"Законодательство RMRP пока не загружено","Синхронизация загрузит актуальные статьи с форума RMRP.","Загрузить законы",self.sync_rmrp_laws); return
+        tk.Label(wrap,text=f"Законы RMRP  •  {len(laws)} документов",bg=BG,fg="#7f97b5",font=("Segoe UI",8,"bold")).pack(anchor="w",pady=(0,8))
+        grid=tk.Frame(wrap,bg=BG); grid.pack(fill="x")
+        accents=["#3b9cff","#777ff7","#28d0a2","#e9a24a"]
         for i,law in enumerate(laws):
             text=" • ".join(x for x in [law.get("short_name"),law.get("law_number")] if x) or "Закон RMRP"
-            tile=self.tile(grid,law.get("name","Без названия"),text,"⚖",["#2f9dff","#6878ff","#34d4aa","#f0a33c"][i%4],"Открыть",lambda lid=law["id"],name=law.get("name","Закон"):self.article_list(lid,name)); tile.grid(row=i//2,column=i%2,padx=(0,7) if i%2==0 else (7,0),pady=(0,10),sticky="nsew"); tile.configure(height=145)
+            tile=self.tile(grid,law.get("name","Без названия"),text,"⚖",accents[i%4],"Открыть",lambda lid=law["id"],name=law.get("name","Закон"):self.article_list(lid,name)); tile.grid(row=i//2,column=i%2,padx=(0,7) if i%2==0 else (7,0),pady=(0,10),sticky="nsew"); tile.configure(height=150)
         grid.grid_columnconfigure(0,weight=1); grid.grid_columnconfigure(1,weight=1)
-
     def add_law(self):
         if self.prof.get("role") not in ("ADMIN", "FOUNDER"):
             return
@@ -902,46 +905,59 @@ class App(tk.Tk):
         ttk.Button(bar, text="Поиск", command=run_search).pack(side="left", padx=8)
 
     def ai_page(self):
-        wrap = self.scroll_area()
-        self.card(wrap, "Как это работает", "Помощник сначала ищет совпадения в law_articles. Если точного материала нет, он прямо сообщает об отсутствии данных вместо выдуманного ответа.")
-        box = tk.Frame(wrap, bg=PANEL, highlightbackground=BORDER, highlightthickness=1); box.pack(fill="x", pady=10)
-        tk.Label(box, text="Вопрос", bg=PANEL, fg=TEXT, font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=18, pady=(16, 5))
-        inp = tk.Text(box, bg="#0f1724", fg=TEXT, insertbackground=TEXT, relief="flat", height=5, wrap="word", font=("Segoe UI", 10)); inp.pack(fill="x", padx=18, pady=(0, 10))
-        answer = tk.Frame(box, bg=PANEL); answer.pack(fill="x", padx=18, pady=(0, 18))
+        wrap=self.scroll_area()
+        intro=tk.Frame(wrap,bg="#0d1d30",highlightbackground="#214d7c",highlightthickness=1); intro.pack(fill="x",pady=(0,12))
+        tk.Label(intro,text="Умный помощник по законодательству RMRP",bg="#0d1d30",fg=TEXT,font=("Segoe UI",14,"bold")).pack(anchor="w",padx=18,pady=(15,4))
+        tk.Label(intro,text="Сначала ищу точное совпадение в базе law_articles. Если данных нет — честно сообщаю об этом.",bg="#0d1d30",fg="#7f97b5",font=("Segoe UI",8)).pack(anchor="w",padx=18,pady=(0,14))
+        chat=tk.Frame(wrap,bg="#0b1421",highlightbackground="#1d3556",highlightthickness=1); chat.pack(fill="x")
+        assistant=tk.Frame(chat,bg="#111e30"); assistant.pack(fill="x",padx=14,pady=14)
+        tk.Label(assistant,text="⚖",bg="#173b67",fg="#79b8ff",font=("Segoe UI Symbol",14,"bold"),width=3,pady=5).pack(side="left",anchor="n")
+        af=tk.Frame(assistant,bg="#111e30"); af.pack(side="left",fill="x",expand=True,padx=10)
+        tk.Label(af,text="RMRP Помощник",bg="#111e30",fg=TEXT,font=("Segoe UI",9,"bold")).pack(anchor="w")
+        tk.Label(af,text="Привет! Найду нужную статью, объясню норму или подскажу порядок действий — только по базе RMRP.",bg="#111e30",fg="#a7b7ca",font=("Segoe UI",9),wraplength=760,justify="left").pack(anchor="w",pady=(4,0))
+        tk.Label(chat,text="Например, вы можете спросить:",bg="#0b1421",fg="#7189a7",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=18,pady=(2,7))
+        examples=["Какие права есть у задержанного?","Можно ли провести досмотр?","Что грозит за неповиновение сотруднику?","Какой порядок действий при задержании?"]
+        chips=tk.Frame(chat,bg="#0b1421"); chips.pack(fill="x",padx=18,pady=(0,12))
+        inp=tk.Text(chat,bg="#0f1827",fg=TEXT,insertbackground=TEXT,relief="flat",height=5,wrap="word",font=("Segoe UI",10),padx=12,pady=10); inp.pack(fill="x",padx=18,pady=5)
+        answer=tk.Frame(chat,bg="#0b1421"); answer.pack(fill="x",padx=18,pady=(4,10))
         def ask():
             for w in answer.winfo_children(): w.destroy()
-            question = inp.get("1.0", "end").strip()
-            if not question: return
-            terms = [x for x in re.findall(r"[A-Za-zА-Яа-яЁё0-9№.-]{3,}", question.lower()) if len(x) >= 4]
+            question=inp.get("1.0","end").strip()
+            if not question: self.notify("Помощь нейросети","Напиши вопрос.","warning"); return
+            terms=[x for x in re.findall(r"[A-Za-zА-Яа-яЁё0-9№.-]{3,}",question.lower()) if len(x)>=4]
             try:
-                found = []
-                for term in terms[:5]:
-                    encoded_term = urllib.parse.quote(term, safe="")
-                    rows = self.db.table("law_articles", "id,law_id,article_number,title,content", {"or": f"(title.ilike.%{encoded_term}%,content.ilike.%{encoded_term}%)"}, "article_number.asc", 10)
+                found=[]
+                for term in terms[:6]:
+                    encoded_term=urllib.parse.quote(term,safe="")
+                    rows=self.db.table("law_articles","id,law_id,article_number,title,content",{"or":f"(title.ilike.%{encoded_term}%,content.ilike.%{encoded_term}%)"},"article_number.asc",10)
                     for row in rows:
                         if row["id"] not in [x["id"] for x in found]: found.append(row)
                 if found:
-                    txt = "Нашёл в базе RMRP:\n\n" + "\n\n".join([f"Статья {x.get('article_number')} — {x.get('title') or ''}\n{x.get('content','')[:800]}" for x in found[:5]])
-                    self.db.insert("ai_history", {"user_id": self.user["id"], "question": question, "answer": txt, "law_article_id": found[0]["id"]})
+                    txt="Нашёл в базе RMRP:\n\n"+"\n\n".join([f"Статья {x.get('article_number')} — {x.get('title') or ''}\n{x.get('content','')[:800]}" for x in found[:4]])
+                    self.db.insert("ai_history",{"user_id":self.user["id"],"question":question,"answer":txt,"law_article_id":found[0]["id"]})
                 else:
-                    txt = "В базе law_articles нет подходящей статьи. Я не буду придумывать ответ — добавь нужный материал в законодательство."
-                    self.db.insert("ai_history", {"user_id": self.user["id"], "question": question, "answer": txt})
-            except Exception as ex:
-                txt = f"Не удалось выполнить поиск по базе: {ex}"
-            tk.Label(answer, text=txt, bg=PANEL, fg=TEXT, font=("Segoe UI", 10), wraplength=850, justify="left", anchor="w").pack(fill="x")
-        ttk.Button(box, text="Найти ответ в базе", command=ask).pack(anchor="e", padx=18, pady=(0, 8))
-
+                    txt="В базе RMRP нет подходящего материала. Я не буду придумывать ответ — добавь нужную статью в законодательство."
+                    self.db.insert("ai_history",{"user_id":self.user["id"],"question":question,"answer":txt})
+            except Exception as ex: txt=f"Не удалось выполнить поиск по базе: {ex}"
+            bubble=tk.Frame(answer,bg="#101d30",highlightbackground="#24466f",highlightthickness=1); bubble.pack(fill="x",pady=8)
+            tk.Label(bubble,text="Ответ помощника",bg="#101d30",fg="#6eb0ff",font=("Segoe UI",8,"bold")).pack(anchor="w",padx=14,pady=(10,4))
+            tk.Label(bubble,text=txt,bg="#101d30",fg=TEXT,font=("Segoe UI",9),wraplength=850,justify="left",anchor="w").pack(fill="x",padx=14,pady=(0,12))
+        for ex in examples:
+            b=tk.Button(chips,text=ex,bg="#13233a",fg="#9bb9d9",activebackground="#1c3e69",activeforeground="white",bd=0,font=("Segoe UI",8),cursor="hand2",padx=10,pady=7,command=lambda x=ex:(inp.delete("1.0","end"),inp.insert("1.0",x))); b.pack(side="left",padx=(0,6),pady=2)
+        ttk.Button(chat,text="Найти ответ в базе",command=ask).pack(anchor="e",padx=18,pady=(2,16))
     def tests(self):
         wrap=self.scroll_area()
         try: tests=self.db.table("tests","id,title,category,description,difficulty,question_count",{"is_active":"eq.true"},"title.asc")
         except Exception as e: self.card(wrap,"Ошибка",str(e)); return
         if not tests: self.card(wrap,"Тестов пока нет","Администратор может создать тесты через раздел «Администрирование»."); return
-        grid=tk.Frame(wrap,bg="#091321"); grid.pack(fill="x")
+        tk.Label(wrap,text="Выбери направление подготовки",bg=BG,fg="#7f97b5",font=("Segoe UI",8,"bold")).pack(anchor="w",pady=(0,8))
+        grid=tk.Frame(wrap,bg=BG); grid.pack(fill="x")
+        accents=["#3b9cff","#777ff7","#28d0a2","#e9a24a"]
         for i,test in enumerate(tests):
-            desc=f"{test.get('question_count',0)} вопросов • {test.get('difficulty','MEDIUM')}\n{test.get('description') or 'Проверь свои знания.'}"
-            tile=self.tile(grid,test.get("title","Тест"),desc,"▣",["#2f9dff","#6878ff","#30d5b0","#eaa13b"][i%4],"Начать",lambda t=test:self.start_test(t)); tile.grid(row=i//2,column=i%2,padx=(0,7) if i%2==0 else (7,0),pady=(0,10),sticky="nsew"); tile.configure(height=165)
+            diff={"EASY":"Лёгкий","MEDIUM":"Средний","HARD":"Сложный"}.get(test.get("difficulty"),test.get("difficulty","Средний"))
+            desc=f"{test.get('question_count',0)} вопросов  •  {diff}\n{test.get('description') or 'Проверь свои знания и закрепи материал.'}"
+            tile=self.tile(grid,test.get("title","Тест"),desc,"✓",accents[i%4],"Начать тест",lambda t=test:self.start_test(t)); tile.grid(row=i//2,column=i%2,padx=(0,7) if i%2==0 else (7,0),pady=(0,10),sticky="nsew"); tile.configure(height=165)
         grid.grid_columnconfigure(0,weight=1); grid.grid_columnconfigure(1,weight=1)
-
     def start_test(self, test):
         try:
             questions = self.db.table("questions", "id,question,answer_a,answer_b,answer_c,answer_d,correct_answer,explanation", {"test_id": f"eq.{test['id']}"}, "id.asc")
