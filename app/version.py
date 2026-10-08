@@ -1,3 +1,1 @@
-APP_NAME = "RMRP Помощник"
-APP_VERSION = "1.3.0"
-APP_PUBLISHER = "Kinzec X WOLF"
+__version__ = "1.4.0"

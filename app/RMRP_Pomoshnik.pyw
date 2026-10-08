@@ -7,15 +7,17 @@ import urllib.request
 import tkinter as tk
 import threading
 import math
+import sys
 try:
     import winsound
 except ImportError:
     winsound = None
 from tkinter import ttk, messagebox, simpledialog
 from datetime import datetime
+from html.parser import HTMLParser
 
 APP_NAME = "RMRP Помощник"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 APP_PUBLISHER = "Kinzec X WOLF"
 SUPABASE_URL = "https://cyihqnquxaxnonjbvshm.supabase.co"
 SUPABASE_KEY = "sb_publishable_3X8WkqV57kAqB8v6KS458A_mPnSBBRK"
@@ -50,6 +52,21 @@ def role_label(role):
 
 def q(value):
     return urllib.parse.quote(str(value), safe="")
+
+
+def resource_path(*parts):
+    base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+    return os.path.join(base, *parts)
+
+
+RMRP_LAW_SOURCES = [
+    {"name":"Федеральный закон «О государственной службе» № 54-ФЗ","short_name":"ФЗ «О госслужбе»","law_number":"54-ФЗ","url":"https://forum.rmrp.ru/threads/federalnyj-zakon-o-gosudarstvennoj-sluzhbe-no-54-fz.25075/"},
+    {"name":"Уголовный Кодекс Российской Федерации","short_name":"УК РФ","law_number":"УК РФ","url":"https://forum.rmrp.ru/threads/ugolovnyj-kodeks-rossijskoj-federacii.58209/"},
+    {"name":"Кодекс об административных правонарушениях Российской Федерации","short_name":"КоАП РФ","law_number":"КоАП РФ","url":"https://forum.rmrp.ru/threads/kodeks-ob-administrativnyx-pravonarushenijax-rossijskoj-federacii.58229/"},
+    {"name":"Процессуальный Кодекс Российской Федерации","short_name":"Процессуальный кодекс","law_number":"ПК РФ","url":"https://forum.rmrp.ru/threads/processualnyj-kodeks-rossijskoj-federacii.58424/"},
+    {"name":"Федеральный закон «О полиции» № 74-ФЗ","short_name":"ФЗ «О полиции»","law_number":"74-ФЗ","url":"https://forum.rmrp.ru/threads/federalnyj-zakon-o-policii-no-74-fz.25074/"},
+    {"name":"Федеральный закон «О Федеральной службе войск национальной гвардии» № 18-ФЗ","short_name":"ФЗ «О ФСВНГ»","law_number":"18-ФЗ","url":"https://forum.rmrp.ru/threads/federalnyj-zakon-o-federalnoj-sluzhbe-vojsk-nacionalnoj-gvardii-no-18-fz.25071/"},
+]
 
 
 class Supabase:
@@ -148,6 +165,7 @@ class App(tk.Tk):
         self.geometry("1360x820")
         self.minsize(1120, 720)
         self.configure(bg=BG)
+        self.setup_window()
         self.db = Supabase()
         self.user = {}
         self.prof = {}
@@ -156,6 +174,38 @@ class App(tk.Tk):
         self._hover_jobs = {}
         self._styles()
         self.show_login()
+
+    def setup_window(self):
+        try:
+            self.overrideredirect(True)
+            self._drag = [0, 0]
+        except Exception:
+            pass
+
+    def titlebar(self, parent):
+        bar=tk.Frame(parent,bg="#07111f",height=34,highlightbackground="#163454",highlightthickness=1)
+        bar.pack(fill="x",side="top")
+        bar.pack_propagate(False)
+        logo=tk.Canvas(bar,width=24,height=24,bg="#07111f",highlightthickness=0); logo.pack(side="left",padx=(10,6),pady=5)
+        logo.create_polygon(12,2,21,5,19,16,12,22,5,16,3,5,fill="#0b2443",outline="#4da2ff",width=1)
+        logo.create_text(12,11,text="⚖",fill="#78b8ff",font=("Segoe UI Symbol",9,"bold"))
+        tk.Label(bar,text=f"{APP_NAME}  •  by {APP_PUBLISHER}",bg="#07111f",fg="#c7d8ee",font=("Segoe UI",8,"bold")).pack(side="left")
+        tk.Label(bar,text=f"v{APP_VERSION}",bg="#07111f",fg="#5e82ad",font=("Segoe UI",8)).pack(side="right",padx=8)
+        close=tk.Button(bar,text="×",command=self.destroy,bg="#07111f",fg="#7f9ab8",activebackground="#8f2034",activeforeground="white",bd=0,font=("Segoe UI",13),width=3,cursor="hand2")
+        close.pack(side="right",fill="y")
+        mini=tk.Button(bar,text="—",command=lambda:self.state("iconic"),bg="#07111f",fg="#7f9ab8",activebackground="#162a45",activeforeground="white",bd=0,font=("Segoe UI",11),width=3,cursor="hand2")
+        mini.pack(side="right",fill="y")
+        bar.bind("<ButtonPress-1>",self._start_drag); bar.bind("<B1-Motion>",self._drag_window)
+        for w in (logo,): w.bind("<ButtonPress-1>",self._start_drag); w.bind("<B1-Motion>",self._drag_window)
+        return bar
+
+    def _start_drag(self,event):
+        self._drag=[event.x_root-self.winfo_x(),event.y_root-self.winfo_y()]
+
+    def _drag_window(self,event):
+        try:
+            self.geometry(f"+{event.x_root-self._drag[0]}+{event.y_root-self._drag[1]}")
+        except Exception: pass
 
     def _styles(self):
         s = ttk.Style(self)
@@ -277,30 +327,32 @@ class App(tk.Tk):
     def show_login(self):
         self.clear()
         root=tk.Frame(self,bg=BG); root.pack(fill="both",expand=True)
-        visual=tk.Frame(root,bg="#07111f"); visual.place(relx=0,rely=0,relwidth=.56,relheight=1)
-        self._gradient_canvas(visual)
-        overlay=tk.Frame(visual,bg="#06101c"); overlay.place(relx=0,rely=0,relwidth=1,relheight=1)
-        tk.Label(overlay,text="⚖",bg="#06101c",fg="#62a8ff",font=("Segoe UI Symbol",72,"bold")).place(relx=.5,rely=.33,anchor="center")
-        tk.Label(overlay,text="RMRP ПОМОЩНИК",bg="#06101c",fg=TEXT,font=("Segoe UI",28,"bold")).place(relx=.5,rely=.48,anchor="center")
-        tk.Label(overlay,text="by Kinzec X WOLF",bg="#06101c",fg="#63a8ff",font=("Segoe UI",11,"bold")).place(relx=.5,rely=.535,anchor="center")
-        tk.Label(overlay,text="Надёжный помощник в изучении законов RMRP",bg="#06101c",fg="#8da4c2",font=("Segoe UI",10)).place(relx=.5,rely=.59,anchor="center")
-        # right auth area
-        auth=tk.Frame(root,bg="#0a1422"); auth.place(relx=.56,rely=0,relwidth=.44,relheight=1)
-        top=tk.Frame(auth,bg="#0a1422"); top.pack(fill="x",padx=44,pady=(34,0))
-        tk.Label(top,text="RMRP Помощник",bg="#0a1422",fg=TEXT,font=("Segoe UI",11,"bold")).pack(side="left")
-        tk.Label(top,text="v1.3.0",bg="#0a1422",fg="#526a88",font=("Segoe UI",8)).pack(side="right")
-        card=tk.Frame(auth,bg="#0d1a2c",highlightbackground="#1e416b",highlightthickness=1)
-        card.place(relx=.5,rely=.52,anchor="center",relwidth=.78,relheight=.62)
-        tk.Label(card,text="Добро пожаловать",bg="#0d1a2c",fg=TEXT,font=("Segoe UI",23,"bold")).pack(anchor="w",padx=34,pady=(34,3))
-        tk.Label(card,text="Войдите в аккаунт, чтобы продолжить",bg="#0d1a2c",fg=MUTED,font=("Segoe UI",9)).pack(anchor="w",padx=34,pady=(0,24))
-        self.email=self.entry(card,"Email")
-        self.password=self.entry(card,"Пароль",secret=True)
-        tk.Checkbutton(card,text="Запомнить меня",bg="#0d1a2c",fg="#7e93ae",selectcolor="#0d1a2c",activebackground="#0d1a2c",activeforeground=TEXT,font=("Segoe UI",9),anchor="w").pack(fill="x",padx=34,pady=(2,8))
-        btn=tk.Button(card,text="ВОЙТИ  →",command=self.do_login,bd=0,bg=ACCENT,fg="white",activebackground="#4b8fff",font=("Segoe UI",10,"bold"),cursor="hand2",pady=12)
-        btn.pack(fill="x",padx=34,pady=(10,10)); btn.bind("<Enter>",lambda e:btn.configure(bg="#4b8fff")); btn.bind("<Leave>",lambda e:btn.configure(bg=ACCENT))
-        tk.Label(card,text="или",bg="#0d1a2c",fg="#4e6380",font=("Segoe UI",8)).pack(pady=(3,8))
+        self.titlebar(root)
+        body=tk.Frame(root,bg=BG); body.pack(fill="both",expand=True)
+        visual=tk.Frame(body,bg="#07111f"); visual.pack(side="left",fill="both",expand=True)
+        try:
+            self._login_image=tk.PhotoImage(file=resource_path("assets","login_bg.png"))
+            lab=tk.Label(visual,image=self._login_image,bg="#07111f",bd=0); lab.place(relx=0,rely=0,relwidth=1,relheight=1)
+        except Exception:
+            self._gradient_canvas(visual)
+        tk.Frame(visual,bg="#3b82f6",width=3).place(relx=1,rely=0,relheight=1,anchor="ne")
+        tk.Label(visual,text="⚖",bg="#07111f",fg="#70b3ff",font=("Segoe UI Symbol",70,"bold")).place(relx=.26,rely=.36,anchor="center")
+        tk.Label(visual,text="RMRP ПОМОЩНИК",bg="#07111f",fg="white",font=("Segoe UI",29,"bold")).place(relx=.28,rely=.53,anchor="center")
+        tk.Label(visual,text="by Kinzec X WOLF",bg="#07111f",fg="#62a8ff",font=("Segoe UI",11,"bold")).place(relx=.28,rely=.59,anchor="center")
+        tk.Label(visual,text="Надёжный помощник в изучении законов RMRP",bg="#07111f",fg="#9ab0cb",font=("Segoe UI",10)).place(relx=.28,rely=.65,anchor="center")
+        auth=tk.Frame(body,bg="#091321",width=570); auth.pack(side="right",fill="y"); auth.pack_propagate(False)
+        top=tk.Frame(auth,bg="#091321"); top.pack(fill="x",padx=42,pady=(26,0))
+        tk.Label(top,text="RMRP Помощник",bg="#091321",fg=TEXT,font=("Segoe UI",11,"bold")).pack(side="left")
+        tk.Label(top,text=f"v{APP_VERSION}",bg="#091321",fg="#4e719b",font=("Segoe UI",8)).pack(side="right")
+        card=tk.Frame(auth,bg="#0d1b2d",highlightbackground="#244c78",highlightthickness=1); card.place(relx=.5,rely=.52,anchor="center",relwidth=.82,relheight=.64)
+        tk.Label(card,text="Добро пожаловать",bg="#0d1b2d",fg=TEXT,font=("Segoe UI",23,"bold")).pack(anchor="w",padx=34,pady=(34,3))
+        tk.Label(card,text="Войдите в аккаунт, чтобы продолжить",bg="#0d1b2d",fg=MUTED,font=("Segoe UI",9)).pack(anchor="w",padx=34,pady=(0,24))
+        self.email=self.entry(card,"Email"); self.password=self.entry(card,"Пароль",secret=True)
+        tk.Checkbutton(card,text="Запомнить меня",bg="#0d1b2d",fg="#7e93ae",selectcolor="#0d1b2d",activebackground="#0d1b2d",activeforeground=TEXT,font=("Segoe UI",9),anchor="w").pack(fill="x",padx=34,pady=(2,8))
+        btn=tk.Button(card,text="ВОЙТИ  →",command=self.do_login,bd=0,bg=ACCENT,fg="white",activebackground="#4b8fff",font=("Segoe UI",10,"bold"),cursor="hand2",pady=12); btn.pack(fill="x",padx=34,pady=(10,10)); btn.bind("<Enter>",lambda e:btn.configure(bg="#4b8fff")); btn.bind("<Leave>",lambda e:btn.configure(bg=ACCENT))
+        tk.Label(card,text="или",bg="#0d1b2d",fg="#4e6380",font=("Segoe UI",8)).pack(pady=(3,8))
         ttk.Button(card,text="Создать аккаунт",style="Secondary.TButton",command=lambda:(self.play_sound("click"),self.show_register())).pack(fill="x",padx=34)
-        tk.Label(card,text="Supabase Secure RLS • Защищённое подключение",bg="#0d1a2c",fg="#536a88",font=("Segoe UI",8)).pack(side="bottom",pady=18)
+        tk.Label(card,text="SUPABASE SECURE RLS  •  ЗАЩИЩЁННОЕ ПОДКЛЮЧЕНИЕ",bg="#0d1b2d",fg="#536a88",font=("Segoe UI",7,"bold")).pack(side="bottom",pady=18)
 
     def entry(self,parent,placeholder,secret=False):
         wrap=tk.Frame(parent,bg="#0d1522",highlightbackground="#233958",highlightthickness=1); wrap.pack(fill="x",padx=48,pady=7)
@@ -314,7 +366,7 @@ class App(tk.Tk):
             if secret: widget.configure(show="•")
 
     def show_register(self):
-        self.clear(); outer=tk.Frame(self,bg=BG); outer.pack(fill="both",expand=True)
+        self.clear(); outer=tk.Frame(self,bg=BG); outer.pack(fill="both",expand=True); self.titlebar(outer)
         card=tk.Frame(outer,bg=PANEL,highlightbackground="#29456f",highlightthickness=1); card.place(relx=.5,rely=.5,anchor="center",width=540,height=700)
         self.logo_mark(card,60)
         tk.Label(card,text="Создание аккаунта",bg=PANEL,fg=TEXT,font=("Segoe UI",22,"bold")).pack()
@@ -378,7 +430,7 @@ class App(tk.Tk):
 
     def show_main(self):
         self.clear()
-        shell=tk.Frame(self,bg=BG); shell.pack(fill="both",expand=True)
+        shell=tk.Frame(self,bg=BG); shell.pack(fill="both",expand=True); self.titlebar(shell)
         sidebar=tk.Frame(shell,bg="#081321",width=236,highlightbackground="#17304d",highlightthickness=1); sidebar.pack(side="left",fill="y"); sidebar.pack_propagate(False)
         head=tk.Frame(sidebar,bg="#081321"); head.pack(fill="x",padx=17,pady=(20,18))
         tk.Label(head,text="⚖",bg="#081321",fg="#62a8ff",font=("Segoe UI Symbol",28,"bold")).pack(side="left")
@@ -504,7 +556,7 @@ class App(tk.Tk):
         tk.Label(hero,text=f"Добро пожаловать, {name}!",bg="#0d1c2e",fg=TEXT,font=("Segoe UI",19,"bold")).pack(anchor="w",padx=22,pady=(18,2))
         tk.Label(hero,text="Сегодня отличный день для новых знаний.",bg="#0d1c2e",fg="#7e96b4",font=("Segoe UI",9)).pack(anchor="w",padx=22,pady=(0,18))
         grid=tk.Frame(wrap,bg="#091321"); grid.pack(fill="x")
-        items=[("▤","Законодательство","30 законов RMRP","Открыть",lambda:self.page("Законодательство"),"#35a9ff"),("⌕","Поиск","Быстрый поиск по знаниям","Открыть",lambda:self.page("Поиск"),"#7e8dff"),("✦","Нейросеть","Задай вопрос ИИ","Открыть",lambda:self.page("Помощь нейросети"),"#31d5ae"),("▣","Тесты","Проверь свои знания","Начать",lambda:self.page("Проверь себя"),"#f2a43b")]
+        items=[("▤","Законодательство","Законы RMRP","Открыть",lambda:self.page("Законодательство"),"#35a9ff"),("⌕","Поиск","Быстрый поиск по знаниям","Открыть",lambda:self.page("Поиск"),"#7e8dff"),("✦","Нейросеть","Задай вопрос ИИ","Открыть",lambda:self.page("Помощь нейросети"),"#31d5ae"),("▣","Тесты","Проверь свои знания","Начать",lambda:self.page("Проверь себя"),"#f2a43b")]
         for i,(ic,t,d,bt,cmd,ac) in enumerate(items):
             tile=self.tile(grid,t,d,ic,ac,bt,cmd); tile.grid(row=0,column=i,padx=(0 if i==0 else 5,5 if i<3 else 0),sticky="nsew"); tile.configure(height=150); grid.grid_columnconfigure(i,weight=1)
         lower=tk.Frame(wrap,bg="#091321"); lower.pack(fill="both",expand=True,pady=(14,0))
@@ -521,13 +573,84 @@ class App(tk.Tk):
                 r=tk.Frame(box,bg="#102136"); r.pack(fill="x",padx=12,pady=4); tk.Label(r,text=icon,bg="#102136",fg=accent,font=("Segoe UI Symbol",12)).pack(side="left",padx=10,pady=8); qf=tk.Frame(r,bg="#102136"); qf.pack(side="left",fill="x",expand=True); tk.Label(qf,text=a,bg="#102136",fg=TEXT,font=("Segoe UI",8,"bold")).pack(anchor="w",pady=(7,0)); tk.Label(qf,text=b,bg="#102136",fg="#7189a7",font=("Segoe UI",7),wraplength=330,justify="left").pack(anchor="w",pady=(0,7))
         if self.prof.get("role") in ("ADMIN","FOUNDER"): self.card(wrap,"Администрирование","Управление пользователями, законами, тестами и системой.","Открыть",lambda:self.page("Администрирование"))
 
+    def _fetch_rmrp_articles(self, url):
+        req=urllib.request.Request(url,headers={"User-Agent":"RMRP-Pomoshnik/1.4.0"})
+        with urllib.request.urlopen(req,timeout=25) as r:
+            raw=r.read().decode("utf-8","replace")
+        # Convert forum HTML into clean text while keeping block boundaries.
+        raw=re.sub(r"<script[^>]*>.*?</script>|<style[^>]*>.*?</style>"," ",raw,flags=re.I|re.S)
+        raw=re.sub(r"<(br|/p|/div|/li|/h[1-6]|/blockquote|/tr)[^>]*>","\n",raw,flags=re.I)
+        raw=re.sub(r"<[^>]+>"," ",raw)
+        from html import unescape
+        text=unescape(raw).replace("\xa0"," ")
+        lines=[re.sub(r"[ \t]+"," ",x).strip() for x in text.splitlines()]
+        lines=[x for x in lines if x]
+        pat=re.compile(r"^Статья\s+([0-9]+(?:-[0-9]+)?(?:\.[0-9]+)?)\.\s*(.+)$",re.I)
+        chunks={}
+        for i,line in enumerate(lines):
+            m=pat.match(line)
+            if not m: continue
+            num=m.group(1); title=m.group(2).strip()
+            j=i+1
+            while j<len(lines) and not pat.match(lines[j]): j+=1
+            content="\n".join(lines[i+1:j]).strip()
+            # TOC entries are short; real article blocks are normally much longer.
+            if len(content)>=30:
+                old=chunks.get(num)
+                if old is None or len(content)>len(old["content"]): chunks[num]={"title":title,"content":content}
+        return [{"article_number":k,"title":v["title"],"content":v["content"]} for k,v in chunks.items()]
+
+    def sync_rmrp_laws(self, notify=True):
+        if self.prof.get("role") not in ("ADMIN","FOUNDER"):
+            messagebox.showwarning(APP_NAME,"Синхронизация законов доступна только Администратору и Основателю.")
+            return
+        progress=tk.Toplevel(self); progress.title("RMRP • синхронизация законов"); progress.geometry("560x250"); progress.configure(bg=BG); progress.transient(self); progress.grab_set()
+        tk.Label(progress,text="Синхронизация законодательства RMRP",bg=BG,fg=TEXT,font=("Segoe UI",16,"bold")).pack(pady=(30,8))
+        status=tk.Label(progress,text="Подключение к форуму RMRP…",bg=BG,fg=MUTED,font=("Segoe UI",9)); status.pack(pady=8)
+        progress.update_idletasks()
+        def worker():
+            total_articles=0; done=0; errors=[]
+            for src in RMRP_LAW_SOURCES:
+                try:
+                    self.after(0,lambda n=src["short_name"]: status.configure(text=f"Загрузка: {n}"))
+                    arts=self._fetch_rmrp_articles(src["url"])
+                    existing=self.db.table("laws","id,name",{"law_number":f"eq.{src['law_number']}"},"id.asc",1)
+                    if existing:
+                        law_id=existing[0]["id"]
+                        self.db.update("laws",{"id":f"eq.{law_id}"},{"name":src["name"],"short_name":src["short_name"],"law_number":src["law_number"],"source_url":src["url"],"description":"Актуальная редакция законодательства RMRP. Источник: форум RMRP."})
+                        self.db.delete("law_articles",{"law_id":f"eq.{law_id}"})
+                    else:
+                        row=self.db.insert("laws",{"name":src["name"],"short_name":src["short_name"],"law_number":src["law_number"],"source_url":src["url"],"description":"Актуальная редакция законодательства RMRP. Источник: форум RMRP.","is_active":True})
+                        law_id=row[0]["id"]
+                    # Insert in chunks to keep requests small.
+                    for k in range(0,len(arts),40):
+                        batch=[dict(a,law_id=law_id) for a in arts[k:k+40]]
+                        if batch: self.db.insert("law_articles",batch)
+                    total_articles += len(arts)
+                    done += 1
+                except Exception as ex:
+                    errors.append(f"{src['short_name']}: {ex}")
+            def finish():
+                progress.destroy(); self.laws()
+                if errors:
+                    messagebox.showwarning(APP_NAME,f"Синхронизация завершена частично.\n\nЗаконов: {done}/6\nСтатей: {total_articles}\n\n"+"\n".join(errors[:6]))
+                else:
+                    messagebox.showinfo(APP_NAME,f"Готово. Загружено 6 законов RMRP и {total_articles} статей.")
+            self.after(0,finish)
+        threading.Thread(target=worker,daemon=True).start()
+
     def laws(self):
         wrap=self.scroll_area(); toolbar=tk.Frame(wrap,bg="#0d1b2c",highlightbackground="#1a385a",highlightthickness=1); toolbar.pack(fill="x",pady=(0,12))
         ttk.Entry(toolbar).pack(side="left",fill="x",expand=True,padx=10,pady=8,ipady=3); ttk.Button(toolbar,text="Обновить",command=self.laws).pack(side="right",padx=8,pady=7)
-        if self.prof.get("role") in ("ADMIN","FOUNDER"): ttk.Button(toolbar,text="+ Закон",command=self.add_law).pack(side="right",pady=7)
+        if self.prof.get("role") in ("ADMIN","FOUNDER"):
+            ttk.Button(toolbar,text="⟳ Синхронизировать RMRP",command=self.sync_rmrp_laws).pack(side="right",padx=4,pady=7)
+            ttk.Button(toolbar,text="+ Закон",command=self.add_law).pack(side="right",pady=7)
         try: laws=self.db.table("laws","id,name,short_name,law_number,description,is_active",{"is_active":"eq.true"},"name.asc")
         except Exception as e: self.card(wrap,"Ошибка загрузки",str(e)); return
         grid=tk.Frame(wrap,bg="#091321"); grid.pack(fill="x")
+        if not laws:
+            self.card(grid,"Законодательство RMRP пока не загружено","Это не пустые страницы: нажмите «Синхронизировать RMRP», и приложение загрузит актуальные тексты и статьи с официального форума RMRP.","Загрузить законы",self.sync_rmrp_laws)
+            return
         for i,law in enumerate(laws):
             text=" • ".join(x for x in [law.get("short_name"),law.get("law_number")] if x) or "Закон RMRP"
             tile=self.tile(grid,law.get("name","Без названия"),text,"⚖",["#2f9dff","#6878ff","#34d4aa","#f0a33c"][i%4],"Открыть",lambda lid=law["id"],name=law.get("name","Закон"):self.article_list(lid,name)); tile.grid(row=i//2,column=i%2,padx=(0,7) if i%2==0 else (7,0),pady=(0,10),sticky="nsew"); tile.configure(height=145)
@@ -901,7 +1024,9 @@ class App(tk.Tk):
         except Exception as e: messagebox.showerror("Скример", str(e))
 
     def admin_laws(self, parent):
-        ttk.Button(parent, text="+ Добавить закон", command=self.add_law).pack(anchor="w", pady=10)
+        row=tk.Frame(parent,bg=BG); row.pack(fill="x",pady=10)
+        ttk.Button(row, text="⟳ Синхронизировать законы RMRP", command=self.sync_rmrp_laws).pack(side="left")
+        ttk.Button(row, text="+ Добавить закон", command=self.add_law).pack(side="left",padx=8)
         self.admin_list(parent, "laws", "id,name,law_number,is_active", "name.asc", ["id","name","law_number","is_active"])
 
     def admin_tests(self, parent):
