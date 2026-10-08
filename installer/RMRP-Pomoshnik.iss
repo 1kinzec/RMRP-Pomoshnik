@@ -1,5 +1,5 @@
 #define MyAppName "RMRP Помощник"
-#define MyAppVersion "1.4.0"
+#define MyAppVersion "1.5.0"
 #define MyAppPublisher "Kinzec X WOLF"
 #define MyAppExeName "RMRP_Pomoshnik.exe"
 
@@ -44,9 +44,9 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}
 
 [Messages]
 WelcomeLabel1=Добро пожаловать в RMRP Помощник
-WelcomeLabel2=Установите современный помощник по законодательству RMRP версии 1.4.0.
+WelcomeLabel2=Установите современный помощник по законодательству RMRP версии 1.5.0.
 SelectDirLabel3=Выберите папку для установки RMRP Помощника.
 ReadyLabel1=Всё готово к установке
 ReadyLabel2=Нажмите «Установить», чтобы начать установку RMRP Помощника.
 FinishedHeadingLabel=Установка завершена
-FinishedLabelNoIcons=RMRP Помощник версии 1.4.0 успешно установлен.
+FinishedLabelNoIcons=RMRP Помощник версии 1.5.0 успешно установлен.
