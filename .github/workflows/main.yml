@@ -1,4 +1,4 @@
-name: Build RMRP Помощник for Windows
+name: Build RMRP Помощник v1.4.0 for Windows
 
 on:
   workflow_dispatch:
@@ -9,19 +9,31 @@ jobs:
 
     steps:
       - name: Скачать проект
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Установить Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
           architecture: x64
 
       - name: Установить PyInstaller
-        run: python -m pip install --disable-pip-version-check pyinstaller
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.16.0
+
+      - name: Проверить Python-код
+        run: python -m py_compile app/RMRP_Pomoshnik.pyw
 
       - name: Собрать EXE
-        run: python -m PyInstaller --noconfirm --clean --onefile --windowed --name RMRP_Pomoshnik app/RMRP_Pomoshnik.pyw
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name RMRP_Pomoshnik
+          --icon installer/assets/rmrp.ico
+          --add-data "app/assets;assets"
+          app/RMRP_Pomoshnik.pyw
 
       - name: Установить Inno Setup
         shell: powershell
@@ -29,12 +41,13 @@ jobs:
 
       - name: Собрать установщик
         shell: powershell
-        run: '& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\RMRP-Pomoshnik.iss'
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\RMRP-Pomoshnik.iss
 
       - name: Загрузить готовые файлы
         uses: actions/upload-artifact@v4
         with:
-          name: RMRP-Pomoshnik-Windows
+          name: RMRP-Pomoshnik-Windows-v1.4.0
           path: |
             dist/RMRP_Pomoshnik.exe
-            installer/output/RMRP-Pomoshnik-Setup-*.exe
+            installer/output/RMRP-Pomoshnik-Setup-1.4.0.exe
