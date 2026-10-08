@@ -8,6 +8,10 @@ import tkinter as tk
 import threading
 import math
 import sys
+import wave
+import struct
+import tempfile
+import time
 try:
     import winsound
 except ImportError:
@@ -172,6 +176,11 @@ class App(tk.Tk):
         self.nav_buttons = {}
         self.content = None
         self._hover_jobs = {}
+        self._toast = None
+        self._toast_after = None
+        self._sound_cache = {}
+        self.settings_path = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "RMRP-Pomoshnik", "settings.json")
+        self.app_settings = self.load_app_settings()
         self._styles()
         self.show_login()
 
@@ -227,23 +236,81 @@ class App(tk.Tk):
         s.configure("TNotebook.Tab", background="#111b2c", foreground=MUTED, padding=(18, 10), font=("Segoe UI", 9, "bold"))
         s.map("TNotebook.Tab", background=[("selected", "#1d4ed8")], foreground=[("selected", "white")])
 
+    def load_app_settings(self):
+        defaults = {"sound_enabled": True, "sound_volume": 18, "hover_sound": False, "toast_duration": 3200}
+        try:
+            with open(self.settings_path, "r", encoding="utf-8") as f:
+                defaults.update(json.load(f))
+        except Exception:
+            pass
+        return defaults
+
+    def save_app_settings(self):
+        try:
+            os.makedirs(os.path.dirname(self.settings_path), exist_ok=True)
+            with open(self.settings_path, "w", encoding="utf-8") as f:
+                json.dump(self.app_settings, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _make_tone(self, kind, freq, duration_ms, volume):
+        key=(kind,freq,duration_ms,int(volume))
+        if key in self._sound_cache: return self._sound_cache[key]
+        path=os.path.join(tempfile.gettempdir(), f"rmrp_{kind}_{freq}_{duration_ms}_{int(volume)}.wav")
+        if not os.path.exists(path):
+            rate=22050; n=max(1,int(rate*duration_ms/1000)); amp=int(32767*max(0,min(100,volume))/100)
+            with wave.open(path,"wb") as w:
+                w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+                data=bytearray()
+                for i in range(n):
+                    env=min(1,i/max(1,int(rate*.006)), (n-i)/max(1,int(rate*.006)), 1)
+                    sample=int(amp*env*math.sin(2*math.pi*freq*i/rate))
+                    data.extend(struct.pack("<h",sample))
+                w.writeframes(data)
+        self._sound_cache[key]=path
+        return path
+
     def play_sound(self, kind="click"):
-        if winsound is None:
-            try: self.bell()
-            except Exception: pass
-            return
-        tones = {
-            "click": [(740, 28)],
-            "hover": [(560, 18)],
-            "success": [(660, 45), (880, 55)],
-            "error": [(300, 70), (220, 90)],
-            "open": [(520, 25), (700, 35)],
-        }
+        if winsound is None or not self.app_settings.get("sound_enabled", True): return
+        if kind == "hover" and not self.app_settings.get("hover_sound", False): return
+        volume=int(self.app_settings.get("sound_volume",18))
+        tones={"click":(740,32),"hover":(560,16),"success":(660,55),"error":(260,80),"open":(520,30)}
+        freq,dur=tones.get(kind,tones["click"])
         def run():
-            try:
-                for freq, dur in tones.get(kind, tones["click"]): winsound.Beep(freq, dur)
+            try: winsound.PlaySound(self._make_tone(kind,freq,dur,volume), winsound.SND_FILENAME|winsound.SND_ASYNC)
             except Exception: pass
-        threading.Thread(target=run, daemon=True).start()
+        threading.Thread(target=run,daemon=True).start()
+
+    def notify(self, title, message, kind="info", duration=None):
+        if duration is None: duration=int(self.app_settings.get("toast_duration",3200))
+        if self._toast is not None:
+            try: self._toast.destroy()
+            except Exception: pass
+        colors={"info":("#3b82f6","ℹ"),"success":("#22c55e","✓"),"warning":("#f59e0b","!"),"error":("#ef4444","×")}
+        accent,icon=colors.get(kind,colors["info"])
+        toast=tk.Toplevel(self); toast.overrideredirect(True); toast.attributes("-topmost",True); toast.configure(bg="#0b1524")
+        toast.geometry("390x105")
+        toast.update_idletasks(); x=self.winfo_rootx()+self.winfo_width()-toast.winfo_width()-22; y=self.winfo_rooty()+self.winfo_height()-toast.winfo_height()-22; toast.geometry(f"+{x}+{y}")
+        outer=tk.Frame(toast,bg="#0b1524",highlightbackground="#203958",highlightthickness=1); outer.pack(fill="both",expand=True)
+        tk.Frame(outer,bg=accent,width=4).pack(side="left",fill="y")
+        tk.Label(outer,text=icon,bg="#0b1524",fg=accent,font=("Segoe UI",17,"bold"),width=3).pack(side="left",fill="y",padx=(5,0))
+        body=tk.Frame(outer,bg="#0b1524"); body.pack(side="left",fill="both",expand=True,padx=8,pady=11)
+        tk.Label(body,text=title,bg="#0b1524",fg=TEXT,font=("Segoe UI",10,"bold"),anchor="w").pack(fill="x")
+        tk.Label(body,text=message,bg="#0b1524",fg=MUTED,font=("Segoe UI",8),anchor="w",justify="left",wraplength=310).pack(fill="x",pady=(4,0))
+        progress=tk.Frame(toast,bg=accent,height=2); progress.place(x=0,y=103,width=390)
+        self._toast=toast
+        start=time.monotonic()
+        def tick():
+            if not toast.winfo_exists(): return
+            left=max(0,1-(time.monotonic()-start)/(duration/1000))
+            progress.place_configure(width=max(1,int(390*left)))
+            if left<=0:
+                try: toast.destroy()
+                except Exception: pass
+                self._toast=None
+            else: self.after(25,tick)
+        self.after(25,tick)
+        self.play_sound("success" if kind=="success" else "click")
 
     def animate_in(self, widget):
         widget.update_idletasks()
@@ -336,16 +403,15 @@ class App(tk.Tk):
         except Exception:
             self._gradient_canvas(visual)
         tk.Frame(visual,bg="#3b82f6",width=3).place(relx=1,rely=0,relheight=1,anchor="ne")
-        tk.Label(visual,text="⚖",bg="#07111f",fg="#70b3ff",font=("Segoe UI Symbol",70,"bold")).place(relx=.26,rely=.36,anchor="center")
-        tk.Label(visual,text="RMRP ПОМОЩНИК",bg="#07111f",fg="white",font=("Segoe UI",29,"bold")).place(relx=.28,rely=.53,anchor="center")
-        tk.Label(visual,text="by Kinzec X WOLF",bg="#07111f",fg="#62a8ff",font=("Segoe UI",11,"bold")).place(relx=.28,rely=.59,anchor="center")
-        tk.Label(visual,text="Надёжный помощник в изучении законов RMRP",bg="#07111f",fg="#9ab0cb",font=("Segoe UI",10)).place(relx=.28,rely=.65,anchor="center")
+        # Логотип остаётся отдельным элементом поверх фоновой иллюстрации.
+        # Название и подпись уже встроены в artwork, поэтому повторно их не рисуем.
+        tk.Label(visual,text="⚖",bg="#07111f",fg="#70b3ff",font=("Segoe UI Symbol",64,"bold")).place(relx=.255,rely=.36,anchor="center")
         auth=tk.Frame(body,bg="#091321",width=570); auth.pack(side="right",fill="y"); auth.pack_propagate(False)
         top=tk.Frame(auth,bg="#091321"); top.pack(fill="x",padx=42,pady=(26,0))
         tk.Label(top,text="RMRP Помощник",bg="#091321",fg=TEXT,font=("Segoe UI",11,"bold")).pack(side="left")
         tk.Label(top,text=f"v{APP_VERSION}",bg="#091321",fg="#4e719b",font=("Segoe UI",8)).pack(side="right")
-        card=tk.Frame(auth,bg="#0d1b2d",highlightbackground="#244c78",highlightthickness=1); card.place(relx=.5,rely=.52,anchor="center",relwidth=.82,relheight=.64)
-        tk.Label(card,text="Добро пожаловать",bg="#0d1b2d",fg=TEXT,font=("Segoe UI",23,"bold")).pack(anchor="w",padx=34,pady=(34,3))
+        card=tk.Frame(auth,bg="#0d1b2d",highlightbackground="#244c78",highlightthickness=1); card.place(relx=.5,rely=.53,anchor="center",relwidth=.82,relheight=.68)
+        tk.Label(card,text="Добро пожаловать",bg="#0d1b2d",fg=TEXT,font=("Segoe UI",24,"bold")).pack(anchor="w",padx=34,pady=(34,3))
         tk.Label(card,text="Войдите в аккаунт, чтобы продолжить",bg="#0d1b2d",fg=MUTED,font=("Segoe UI",9)).pack(anchor="w",padx=34,pady=(0,24))
         self.email=self.entry(card,"Email"); self.password=self.entry(card,"Пароль",secret=True)
         tk.Checkbutton(card,text="Запомнить меня",bg="#0d1b2d",fg="#7e93ae",selectcolor="#0d1b2d",activebackground="#0d1b2d",activeforeground=TEXT,font=("Segoe UI",9),anchor="w").pack(fill="x",padx=34,pady=(2,8))
@@ -379,14 +445,14 @@ class App(tk.Tk):
         email = self.email.get().strip()
         password = self.password.get()
         if not email or email == "Email" or not password or password == "Пароль":
-            messagebox.showwarning(APP_NAME, "Введите email и пароль.")
+            self.notify(APP_NAME, "Введите email и пароль.")
             return
         try:
             data = self.db.auth_login(email, password)
             self.user = data.get("user") or {}
             if not self.db.access_token or not self.user.get("id"):
                 raise RuntimeError("Supabase не вернул активную сессию.")
-            rows = self.db.table("profiles", "id,username,display_name,avatar_url,role,premium,status,allow_pranks,created_at,last_login,updated_at", {"id": f"eq.{self.user['id']}"})
+            rows = self.db.table("profiles", "id,username,display_name,avatar_url,bio,role,premium,status,allow_pranks,created_at,last_login,updated_at", {"id": f"eq.{self.user['id']}"})
             if not rows:
                 raise RuntimeError("Профиль пользователя не найден. Проверь SQL-триггер profiles.")
             self.prof = rows[0]
@@ -398,8 +464,9 @@ class App(tk.Tk):
             except Exception:
                 pass
             self.show_main()
+            self.start_prank_listener()
         except Exception as e:
-            messagebox.showerror("Ошибка входа", str(e))
+            self.notify("Ошибка входа", str(e), "error")
 
     def do_register(self):
         email = self.r_email.get().strip()
@@ -408,25 +475,25 @@ class App(tk.Tk):
         p1 = self.r_password.get()
         p2 = self.r_password2.get()
         if email in ("", "Email") or username in ("", "Логин") or p1 in ("", "Пароль"):
-            messagebox.showwarning(APP_NAME, "Заполни обязательные поля.")
+            self.notify(APP_NAME, "Заполни обязательные поля.")
             return
         if len(p1) < 6:
-            messagebox.showwarning(APP_NAME, "Пароль должен содержать минимум 6 символов.")
+            self.notify(APP_NAME, "Пароль должен содержать минимум 6 символов.")
             return
         if p1 != p2:
-            messagebox.showwarning(APP_NAME, "Пароли не совпадают.")
+            self.notify(APP_NAME, "Пароли не совпадают.")
             return
         if not re.fullmatch(r"[A-Za-zА-Яа-яЁё0-9_.-]{3,32}", username):
-            messagebox.showwarning(APP_NAME, "Логин: 3–32 символа, только буквы, цифры, _, ., -.")
+            self.notify(APP_NAME, "Логин: 3–32 символа, только буквы, цифры, _, ., -.")
             return
         try:
             data = self.db.auth_register(email, p1, username, display or username)
             if data.get("access_token"):
                 self.db.access_token = data["access_token"]
-            messagebox.showinfo(APP_NAME, "Аккаунт создан. Если включено подтверждение email — подтверди почту и войди.")
+            self.notify(APP_NAME, "Аккаунт создан. Если включено подтверждение email — подтверди почту и войди.", "success")
             self.show_login()
         except Exception as e:
-            messagebox.showerror("Ошибка регистрации", str(e))
+            self.notify("Ошибка регистрации", str(e), "error")
 
     def show_main(self):
         self.clear()
@@ -493,7 +560,8 @@ class App(tk.Tk):
             "Проверь себя": "Тесты с сохранением результатов в Supabase.",
             "Избранное": "Сохранённые статьи.",
             "История": "Результаты обучения.",
-            "Настройки": "Профиль, безопасность и настройки приложения.",
+            "Профиль": "Личная страница и данные аккаунта.",
+            "Настройки": "Звук, уведомления и поведение приложения.",
             "Жалобы": "Обращения пользователей и модерация.",
             "Администрирование": "Управление пользователями, законами, тестами и системой."
         }
@@ -507,23 +575,35 @@ class App(tk.Tk):
             "Избранное": self.favorites_page,
             "История": self.history_page,
             "Настройки": self.settings,
-            "Профиль": self.settings,
+            "Профиль": self.profile_page,
             "Жалобы": self.reports_page,
             "Администрирование": self.admin_page,
         }
         pages.get(title, self.home)()
 
     def scroll_area(self):
-        outer = tk.Frame(self.content, bg=BG)
-        outer.pack(fill="both", expand=True, padx=38, pady=(0, 20))
-        canvas = tk.Canvas(outer, bg=BG, highlightthickness=0)
-        scroll = ttk.Scrollbar(outer, orient="vertical", command=canvas.yview)
-        inner = tk.Frame(canvas, bg=BG)
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=scroll.set)
-        canvas.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="right", fill="y")
+        outer=tk.Frame(self.content,bg=BG); outer.pack(fill="both",expand=True,padx=38,pady=(0,20))
+        canvas=tk.Canvas(outer,bg=BG,highlightthickness=0,bd=0)
+        bar=tk.Canvas(outer,width=10,bg="#07111f",highlightthickness=0,bd=0)
+        inner=tk.Frame(canvas,bg=BG)
+        win_id=canvas.create_window((0,0),window=inner,anchor="nw")
+        def refresh(_=None):
+            canvas.configure(scrollregion=canvas.bbox("all")); canvas.itemconfigure(win_id,width=max(canvas.winfo_width(),1)); self.after_idle(draw_bar)
+        def draw_bar():
+            bar.delete("all"); ch=canvas.winfo_height(); region=canvas.bbox("all")
+            if not region or region[3] <= ch:
+                return
+            total=region[3]; ratio=min(1,ch/total); thumb_h=max(48,int(ch*ratio)); y=0
+            first,last=canvas.yview(); y=int(first*ch);
+            bar.create_round_rect if False else None
+            bar.create_rectangle(2,y+2,8,y+thumb_h-2,fill="#315f96",outline="")
+        def on_scroll(*args): canvas.yview(*args); draw_bar()
+        def wheel(e):
+            canvas.yview_scroll(int(-e.delta/120),"units"); draw_bar()
+        inner.bind("<Configure>",refresh); canvas.bind("<Configure>",refresh); canvas.bind_all("<MouseWheel>",wheel)
+        canvas.configure(yscrollcommand=lambda first,last:(draw_bar()))
+        bar.bind("<Button-1>",lambda e: canvas.yview_moveto(max(0,min(1,e.y/max(1,bar.winfo_height())))))
+        canvas.pack(side="left",fill="both",expand=True); bar.pack(side="right",fill="y",padx=(6,0))
         return inner
 
     def card(self,parent,title,text,button=None,command=None):
@@ -602,7 +682,7 @@ class App(tk.Tk):
 
     def sync_rmrp_laws(self, notify=True):
         if self.prof.get("role") not in ("ADMIN","FOUNDER"):
-            messagebox.showwarning(APP_NAME,"Синхронизация законов доступна только Администратору и Основателю.")
+            self.notify(APP_NAME,"Синхронизация законов доступна только Администратору и Основателю.","warning")
             return
         progress=tk.Toplevel(self); progress.title("RMRP • синхронизация законов"); progress.geometry("560x250"); progress.configure(bg=BG); progress.transient(self); progress.grab_set()
         tk.Label(progress,text="Синхронизация законодательства RMRP",bg=BG,fg=TEXT,font=("Segoe UI",16,"bold")).pack(pady=(30,8))
@@ -633,9 +713,9 @@ class App(tk.Tk):
             def finish():
                 progress.destroy(); self.laws()
                 if errors:
-                    messagebox.showwarning(APP_NAME,f"Синхронизация завершена частично.\n\nЗаконов: {done}/6\nСтатей: {total_articles}\n\n"+"\n".join(errors[:6]))
+                    self.notify(APP_NAME,f"Синхронизация завершена частично. Законов: {done}/6 • Статей: {total_articles}","warning",6000)
                 else:
-                    messagebox.showinfo(APP_NAME,f"Готово. Загружено 6 законов RMRP и {total_articles} статей.")
+                    self.notify(APP_NAME,f"Загружено 6 законов RMRP и {total_articles} статей.","success",5000)
             self.after(0,finish)
         threading.Thread(target=worker,daemon=True).start()
 
@@ -669,7 +749,7 @@ class App(tk.Tk):
             self.log("Создан закон", "laws", name)
             self.laws()
         except Exception as e:
-            messagebox.showerror("Ошибка", str(e))
+            self.notify("Ошибка", str(e), "error")
 
     def article_list(self, law_id, law_name):
         self.page_header_replace(f"{law_name} — статьи", "")
@@ -698,7 +778,7 @@ class App(tk.Tk):
             self.log("Создана статья", "law_articles", f"{law_name} / {number}")
             self.article_list(law_id, law_name)
         except Exception as e:
-            messagebox.showerror("Ошибка", str(e))
+            self.notify("Ошибка", str(e), "error")
 
     def article_view(self, article, law_name):
         win = tk.Toplevel(self); win.title(f"{law_name} — статья {article.get('article_number')}"); win.geometry("900x650"); win.configure(bg=BG)
@@ -714,12 +794,12 @@ class App(tk.Tk):
             existing = self.db.table("favorites", "id", {"user_id": f"eq.{self.user['id']}", "law_article_id": f"eq.{article_id}"})
             if existing:
                 self.db.delete("favorites", {"user_id": f"eq.{self.user['id']}", "law_article_id": f"eq.{article_id}"})
-                messagebox.showinfo(APP_NAME, "Удалено из избранного.")
+                self.notify(APP_NAME, "Удалено из избранного.", "info")
             else:
                 self.db.insert("favorites", {"user_id": self.user["id"], "law_article_id": article_id})
-                messagebox.showinfo(APP_NAME, "Добавлено в избранное.")
+                self.notify(APP_NAME, "Добавлено в избранное.", "success")
         except Exception as e:
-            messagebox.showerror("Избранное", str(e))
+            self.notify("Избранное", str(e), "error")
 
     def search_page(self):
         wrap = self.scroll_area()
@@ -793,9 +873,9 @@ class App(tk.Tk):
         try:
             questions = self.db.table("questions", "id,question,answer_a,answer_b,answer_c,answer_d,correct_answer,explanation", {"test_id": f"eq.{test['id']}"}, "id.asc")
         except Exception as e:
-            messagebox.showerror("Тест", str(e)); return
+            self.notify("Тест", str(e), "error"); return
         if not questions:
-            messagebox.showinfo("Тест", "В этом тесте пока нет вопросов."); return
+            self.notify("Тест", "В этом тесте пока нет вопросов.", "info"); return
         win = tk.Toplevel(self); win.title(f"{test['title']} — RMRP Помощник"); win.geometry("900x650"); win.configure(bg=BG)
         idx = 0; selected = {}
         var = tk.StringVar()
@@ -835,7 +915,7 @@ class App(tk.Tk):
                 rid = result[0]["id"]
                 answers = [{"result_id": rid, "question_id": qu["id"], "selected_answer": selected.get(qu["id"], "A"), "is_correct": selected.get(qu["id"]) == qu["correct_answer"]} for qu in questions]
                 self.db.insert("test_answers", answers)
-                messagebox.showinfo("Готово", f"Тест завершён. Результат: {score}%.", parent=win); win.destroy()
+                self.notify("Тест завершён", f"Результат: {score}%.", "success"); win.destroy()
             except Exception as e:
                 messagebox.showerror("Ошибка сохранения", str(e), parent=win)
         ttk.Button(nav, text="← Назад", style="Secondary.TButton", command=prev_q).pack(side="left")
@@ -868,30 +948,64 @@ class App(tk.Tk):
         except Exception as e:
             self.card(wrap, "Ошибка", str(e))
 
+    def profile_page(self):
+        wrap=self.scroll_area()
+        cover=tk.Frame(wrap,bg="#102744",height=145,highlightbackground="#245383",highlightthickness=1); cover.pack(fill="x",pady=(0,10)); cover.pack_propagate(False)
+        avatar=tk.Canvas(cover,width=92,height=92,bg="#102744",highlightthickness=0); avatar.place(x=28,y=28)
+        avatar.create_oval(4,4,88,88,fill="#0b1727",outline="#4d9cff",width=2); avatar.create_text(46,46,text=(self.prof.get("display_name") or self.prof.get("username") or "?")[0].upper(),fill="#8fc5ff",font=("Segoe UI",28,"bold"))
+        tk.Label(cover,text=self.prof.get("display_name") or self.prof.get("username") or "Пользователь",bg="#102744",fg=TEXT,font=("Segoe UI",19,"bold")).place(x=140,y=38)
+        tk.Label(cover,text=role_label(self.prof.get("role","USER")),bg="#102744",fg="#78b7ff",font=("Segoe UI",9,"bold")).place(x=142,y=72)
+        tk.Label(cover,text="● В сети",bg="#102744",fg="#35d58a",font=("Segoe UI",8,"bold")).place(x=142,y=98)
+        form=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); form.pack(fill="x",pady=8)
+        tk.Label(form,text="Профиль",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,12))
+        fields={}
+        for label,key in [("Отображаемое имя","display_name"),("Логин","username"),("Аватар — URL изображения","avatar_url"),("О себе","bio")]:
+            tk.Label(form,text=label,bg=PANEL,fg=MUTED,font=("Segoe UI",8,"bold")).pack(anchor="w",padx=20,pady=(7,4))
+            e=ttk.Entry(form); e.pack(fill="x",padx=20,ipady=7); e.insert(0,self.prof.get(key) or ""); fields[key]=e
+            if key == "username": e.configure(state="readonly")
+        tk.Label(form,text=f"Роль: {role_label(self.prof.get('role','USER'))}    •    Статус: {self.prof.get('status','ACTIVE')}",bg=PANEL,fg="#7f9ab8",font=("Segoe UI",8)).pack(anchor="w",padx=20,pady=14)
+        def save():
+            values={k:fields[k].get().strip() for k in fields}
+            if not values["display_name"]: self.notify("Профиль","Имя не может быть пустым.","warning"); return
+            try:
+                self.db.update("profiles",{"id":f"eq.{self.user['id']}"},values)
+                self.prof.update(values); self.notify("Профиль сохранён","Изменения применены.","success"); self.show_main()
+            except Exception as e: self.notify("Профиль",str(e),"error")
+        ttk.Button(form,text="Сохранить изменения",command=save).pack(anchor="e",padx=20,pady=(0,20))
+
     def settings(self):
-        wrap = self.scroll_area()
-        name = self.prof.get("display_name") or self.prof.get("username") or "—"
-        self.card(wrap, "Аккаунт", f"Логин: {self.prof.get('username','—')}\nИмя: {name}\nРоль: {role_label(self.prof.get('role','USER'))}\nСтатус: {self.prof.get('status','—')}\nPremium: {'Да' if self.prof.get('premium') else 'Нет'}")
-        ttk.Button(wrap, text="Изменить отображаемое имя", command=self.change_display_name).pack(anchor="w", pady=8)
-        allow = tk.BooleanVar(value=bool(self.prof.get("allow_pranks")))
-        f = tk.Frame(wrap, bg=PANEL, highlightbackground=BORDER, highlightthickness=1); f.pack(fill="x", pady=8)
-        tk.Checkbutton(f, text="Разрешаю внутриигровые розыгрыши/скример", variable=allow, bg=PANEL, fg=TEXT, selectcolor=PANEL2, activebackground=PANEL, activeforeground=TEXT, font=("Segoe UI", 10)).pack(side="left", padx=15, pady=14)
-        ttk.Button(f, text="Сохранить", command=lambda: self.save_pranks(allow.get())).pack(side="right", padx=15)
-        self.card(wrap, "Версия", f"{APP_NAME} v{APP_VERSION}\n{APP_PUBLISHER}\nWindows release build")
+        wrap=self.scroll_area()
+        sound=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); sound.pack(fill="x",pady=(0,10))
+        tk.Label(sound,text="Звук интерфейса",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,4))
+        tk.Label(sound,text="Громкость была снижена. Здесь можно настроить её отдельно.",bg=PANEL,fg=MUTED,font=("Segoe UI",8)).pack(anchor="w",padx=20,pady=(0,14))
+        enabled=tk.BooleanVar(value=bool(self.app_settings.get("sound_enabled",True))); hover=tk.BooleanVar(value=bool(self.app_settings.get("hover_sound",False))); vol=tk.IntVar(value=int(self.app_settings.get("sound_volume",18)))
+        tk.Checkbutton(sound,text="Звуки нажатия",variable=enabled,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=20,pady=5)
+        tk.Checkbutton(sound,text="Звук при наведении",variable=hover,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=20,pady=5)
+        tk.Label(sound,text="Громкость",bg=PANEL,fg=MUTED,font=("Segoe UI",8,"bold")).pack(anchor="w",padx=20,pady=(12,0))
+        scale=tk.Scale(sound,from_=0,to=50,orient="horizontal",variable=vol,bg=PANEL,fg=TEXT,highlightthickness=0,troughcolor="#203552",activebackground=ACCENT,length=360,showvalue=True); scale.pack(anchor="w",padx=20,pady=4)
+        ttk.Button(sound,text="Проверить звук",command=lambda:self.play_sound("click")).pack(side="left",padx=20,pady=(8,18))
+        def save_sound():
+            self.app_settings.update({"sound_enabled":enabled.get(),"hover_sound":hover.get(),"sound_volume":vol.get()}); self.save_app_settings(); self.notify("Настройки сохранены","Параметры звука применены.","success")
+        ttk.Button(sound,text="Сохранить",command=save_sound).pack(side="right",padx=20,pady=(8,18))
+        notif=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); notif.pack(fill="x",pady=8)
+        tk.Label(notif,text="Уведомления",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,4))
+        tk.Label(notif,text="Вместо стандартных окон приложение использует компактные уведомления справа внизу.",bg=PANEL,fg=MUTED,font=("Segoe UI",8)).pack(anchor="w",padx=20,pady=(0,10))
+        ttk.Button(notif,text="Показать пример",command=lambda:self.notify("RMRP Помощник","Так выглядят новые уведомления.","info")).pack(anchor="w",padx=20,pady=(0,18))
+        prank=tk.Frame(wrap,bg=PANEL,highlightbackground=BORDER,highlightthickness=1); prank.pack(fill="x",pady=8)
+        tk.Label(prank,text="Скример",bg=PANEL,fg=TEXT,font=("Segoe UI",13,"bold")).pack(anchor="w",padx=20,pady=(18,4))
+        allow=tk.BooleanVar(value=bool(self.prof.get("allow_pranks")))
+        tk.Checkbutton(prank,text="Разрешаю внутриигровые розыгрыши",variable=allow,bg=PANEL,fg=TEXT,selectcolor=PANEL2,activebackground=PANEL,activeforeground=TEXT,font=("Segoe UI",9)).pack(anchor="w",padx=20,pady=8)
+        ttk.Button(prank,text="Сохранить разрешение",command=lambda:self.save_pranks(allow.get())).pack(anchor="w",padx=20,pady=(0,18))
+        self.card(wrap,"Версия",f"{APP_NAME} v{APP_VERSION}\n{APP_PUBLISHER}\nWindows release build")
 
     def change_display_name(self):
-        value = simpledialog.askstring("Имя", "Новое отображаемое имя:", initialvalue=self.prof.get("display_name") or "")
-        if value is None: return
-        try:
-            self.db.update("profiles", {"id": f"eq.{self.user['id']}"}, {"display_name": value.strip()})
-            self.prof["display_name"] = value.strip(); self.show_main()
-        except Exception as e: messagebox.showerror("Настройки", str(e))
+        self.page("Профиль")
 
-    def save_pranks(self, value):
+    def save_pranks(self,value):
         try:
-            self.db.update("profiles", {"id": f"eq.{self.user['id']}"}, {"allow_pranks": bool(value)})
-            self.prof["allow_pranks"] = bool(value); messagebox.showinfo(APP_NAME, "Настройки сохранены.")
-        except Exception as e: messagebox.showerror("Настройки", str(e))
+            self.db.update("profiles",{"id":f"eq.{self.user['id']}"},{"allow_pranks":bool(value)})
+            self.prof["allow_pranks"]=bool(value); self.notify("Скример","Разрешение сохранено.","success")
+        except Exception as e: self.notify("Скример",str(e),"error")
 
     def reports_page(self):
         wrap = self.scroll_area()
@@ -917,8 +1031,8 @@ class App(tk.Tk):
         desc = self.text_dialog("Жалоба", "Подробности:") or ""
         try:
             self.db.insert("reports", {"author_id": self.user["id"], "target_user_id": target, "reason": reason, "description": desc})
-            messagebox.showinfo(APP_NAME, "Жалоба отправлена."); self.reports_page()
-        except Exception as e: messagebox.showerror("Жалоба", str(e))
+            self.notify(APP_NAME, "Жалоба отправлена.", "success"); self.reports_page()
+        except Exception as e: self.notify("Жалоба", str(e), "error")
 
     def report_dialog(self, report):
         win = tk.Toplevel(self); win.title(f"Жалоба #{report['id']}"); win.geometry("600x500"); win.configure(bg=BG)
@@ -953,22 +1067,24 @@ class App(tk.Tk):
         ttk.Button(actions, text="Изменить статус", command=lambda: self.change_user_status(tree)).pack(side="left", padx=4)
         ttk.Button(actions, text="Premium", command=lambda: self.toggle_premium(tree)).pack(side="left", padx=4)
         ttk.Button(actions, text="Скример: разрешение", command=lambda: self.toggle_prank(tree)).pack(side="left", padx=4)
+        if self.prof.get("role") == "FOUNDER":
+            ttk.Button(actions, text="⚡ Отправить скример", command=lambda: self.send_screamer(tree)).pack(side="left", padx=4)
         self.refresh_admin_users(tree)
 
     def refresh_admin_users(self, tree):
         for i in tree.get_children(): tree.delete(i)
         try:
-            rows = self.db.table("profiles", "id,username,display_name,role,status,premium,allow_pranks", {}, "created_at.asc", 300)
+            rows = self.db.table("profiles", "id,username,display_name,avatar_url,bio,role,status,premium,allow_pranks", {}, "created_at.asc", 300)
             for r in rows: tree.insert("", "end", iid=r["id"], values=(r["id"],r.get("username"),r.get("display_name"),role_label(r.get("role")),r.get("status"),"Да" if r.get("premium") else "Нет"))
-        except Exception as e: messagebox.showerror("Пользователи", str(e))
+        except Exception as e: self.notify("Пользователи", str(e), "error")
 
     def selected_user(self, tree):
         ids = tree.selection()
-        if not ids: messagebox.showinfo(APP_NAME, "Выбери пользователя."); return None
+        if not ids: self.notify(APP_NAME, "Выбери пользователя.", "warning"); return None
         return ids[0]
 
     def get_profile(self, uid):
-        rows = self.db.table("profiles", "id,username,display_name,role,status,premium,allow_pranks", {"id": f"eq.{uid}"}); return rows[0] if rows else None
+        rows = self.db.table("profiles", "id,username,display_name,avatar_url,bio,role,status,premium,allow_pranks", {"id": f"eq.{uid}"}); return rows[0] if rows else None
 
     def change_user_role(self, tree):
         uid = self.selected_user(tree)
@@ -976,9 +1092,9 @@ class App(tk.Tk):
         target = self.get_profile(uid)
         if not target: return
         if uid == self.user["id"] and self.prof.get("role") == "FOUNDER":
-            messagebox.showwarning(APP_NAME, "Основатель не должен менять свою роль из клиентского интерфейса."); return
+            self.notify(APP_NAME, "Основатель не должен менять свою роль из клиентского интерфейса.", "warning"); return
         if target.get("role") == "FOUNDER" and self.prof.get("role") != "FOUNDER":
-            messagebox.showerror(APP_NAME, "Только Основатель может управлять аккаунтом Основателя."); return
+            self.notify(APP_NAME, "Только Основатель может управлять аккаунтом Основателя.", "error"); return
         win = tk.Toplevel(self); win.title("Роль"); win.geometry("420x220"); win.configure(bg=BG)
         tk.Label(win, text=f"Роль для {target.get('username')}", bg=BG, fg=TEXT, font=("Segoe UI", 13, "bold")).pack(pady=20)
         values = ROLE_ORDER if self.prof.get("role") == "FOUNDER" else ["MODERATOR","PREMIUM","USER"]
@@ -998,12 +1114,12 @@ class App(tk.Tk):
         if not uid: return
         target = self.get_profile(uid)
         if target and target.get("role") == "FOUNDER" and self.prof.get("role") != "FOUNDER":
-            messagebox.showerror(APP_NAME, "Только Основатель может изменять статус Основателя."); return
+            self.notify(APP_NAME, "Только Основатель может изменять статус Основателя.", "error"); return
         status = simpledialog.askstring("Статус", "ACTIVE / BLOCKED / BANNED:", initialvalue=target.get("status","ACTIVE") if target else "ACTIVE")
         if status not in STATUS_VALUES: return
         try:
             self.db.update("profiles", {"id": f"eq.{uid}"}, {"status": status}); self.log("Изменён статус", "profiles", uid, {"status": status}); self.refresh_admin_users(tree)
-        except Exception as e: messagebox.showerror("Статус", str(e))
+        except Exception as e: self.notify("Статус", str(e), "error")
 
     def toggle_premium(self, tree):
         uid = self.selected_user(tree)
@@ -1012,7 +1128,7 @@ class App(tk.Tk):
         if not target: return
         try:
             self.db.update("profiles", {"id": f"eq.{uid}"}, {"premium": not bool(target.get("premium"))}); self.log("Изменён Premium", "profiles", uid); self.refresh_admin_users(tree)
-        except Exception as e: messagebox.showerror("Premium", str(e))
+        except Exception as e: self.notify("Premium", str(e), "error")
 
     def toggle_prank(self, tree):
         uid = self.selected_user(tree)
@@ -1021,7 +1137,49 @@ class App(tk.Tk):
         if not target: return
         try:
             self.db.update("profiles", {"id": f"eq.{uid}"}, {"allow_pranks": not bool(target.get("allow_pranks"))}); self.log("Изменено разрешение на розыгрыши", "profiles", uid); self.refresh_admin_users(tree)
-        except Exception as e: messagebox.showerror("Скример", str(e))
+        except Exception as e: self.notify("Скример", str(e), "error")
+
+    def send_screamer(self, tree):
+        if self.prof.get("role") != "FOUNDER":
+            self.notify("Скример","Функция доступна только Основателю.","error"); return
+        uid=self.selected_user(tree)
+        if not uid: return
+        target=self.get_profile(uid)
+        if not target: return
+        if not target.get("allow_pranks"):
+            self.notify("Скример","Пользователь не разрешил розыгрыши в настройках.","warning"); return
+        try:
+            self.db.insert("prank_events",{"target_user_id":uid,"created_by":self.user["id"],"kind":"screamer"})
+            self.log("Отправлен скример","profiles",uid)
+            self.notify("Скример отправлен",f"Сигнал отправлен пользователю {target.get('display_name') or target.get('username') or uid}.","success")
+        except Exception as e: self.notify("Скример",str(e),"error")
+
+    def start_prank_listener(self):
+        if not self.user.get("id"): return
+        def poll():
+            try:
+                rows=self.db.table("prank_events","id,kind,created_at",{"target_user_id":f"eq.{self.user['id']}","consumed_at":"is.null"},"created_at.asc",5)
+                for event in rows:
+                    self.db.update("prank_events",{"id":f"eq.{event['id']}"},{"consumed_at":datetime.utcnow().isoformat()+"Z"})
+                    self.after(0,self.show_screamer)
+            except Exception:
+                pass
+            if self.user.get("id"): self.after(3000,poll)
+        self.after(1500,poll)
+
+    def show_screamer(self):
+        if not self.prof.get("allow_pranks") and self.prof.get("role") != "FOUNDER": return
+        win=tk.Toplevel(self); win.overrideredirect(True); win.attributes("-topmost",True); win.configure(bg="#03060b")
+        sw,sh=self.winfo_screenwidth(),self.winfo_screenheight(); win.geometry(f"{sw}x{sh}+0+0")
+        canvas=tk.Canvas(win,bg="#03060b",highlightthickness=0); canvas.pack(fill="both",expand=True)
+        canvas.create_oval(sw*.35,sh*.18,sw*.65,sh*.62,fill="#07172b",outline="#3b82f6",width=5)
+        canvas.create_text(sw/2,sh*.40,text="⚡",fill="#62a8ff",font=("Segoe UI Symbol",110,"bold"))
+        canvas.create_text(sw/2,sh*.68,text="RMRP СКРИМЕР",fill="#f4f7fb",font=("Segoe UI",34,"bold"))
+        canvas.create_text(sw/2,sh*.75,text="Розыгрыш от Основателя",fill="#8aa4c2",font=("Segoe UI",15))
+        try:
+            if winsound: winsound.Beep(880,120); winsound.Beep(440,180)
+        except Exception: pass
+        win.bind("<Escape>",lambda e:win.destroy()); win.after(4200,win.destroy)
 
     def admin_laws(self, parent):
         row=tk.Frame(parent,bg=BG); row.pack(fill="x",pady=10)
@@ -1057,7 +1215,7 @@ class App(tk.Tk):
         try:
             self.db.insert("tests", {"title": title, "category": category, "description": desc, "difficulty": difficulty, "question_count": 0, "is_active": True})
             self.log("Создан тест", "tests", title); self.admin_page()
-        except Exception as e: messagebox.showerror("Тест", str(e))
+        except Exception as e: self.notify("Тест", str(e), "error")
 
     def admin_announcements(self, parent):
         ttk.Button(parent, text="+ Создать объявление", command=self.add_announcement).pack(anchor="w", pady=10)
@@ -1067,7 +1225,7 @@ class App(tk.Tk):
         try:
             rows = self.db.table("announcements", "id,title,type,is_active,created_at", {}, "created_at.desc", 200)
             for r in rows: tree.insert("", "end", values=(r["id"],r["title"],r["type"],r["is_active"],r["created_at"]))
-        except Exception as e: messagebox.showerror("Объявления", str(e))
+        except Exception as e: self.notify("Объявления", str(e), "error")
 
     def add_announcement(self):
         title = simpledialog.askstring("Объявление", "Заголовок:")
@@ -1078,7 +1236,7 @@ class App(tk.Tk):
         try:
             self.db.insert("announcements", {"title": title, "content": content, "type": typ, "is_active": True, "created_by": self.user["id"]})
             self.log("Создано объявление", "announcements", title); self.admin_page()
-        except Exception as e: messagebox.showerror("Объявление", str(e))
+        except Exception as e: self.notify("Объявление", str(e), "error")
 
     def admin_audit(self, parent):
         tree = ttk.Treeview(parent, columns=("id","user","action","target","details","date"), show="headings")
@@ -1087,7 +1245,7 @@ class App(tk.Tk):
         try:
             rows = self.db.table("audit_logs", "id,user_id,action,target_type,target_id,details,created_at", {}, "created_at.desc", 300)
             for r in rows: tree.insert("", "end", values=(r["id"],r.get("user_id"),r.get("action"),r.get("target_type"),r.get("target_id"),json.dumps(r.get("details"),ensure_ascii=False),r.get("created_at")))
-        except Exception as e: messagebox.showerror("Журнал", str(e))
+        except Exception as e: self.notify("Журнал", str(e), "error")
 
     def log(self, action, target_type=None, target_id=None, details=None):
         try:

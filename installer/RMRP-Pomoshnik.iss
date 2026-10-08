@@ -19,7 +19,7 @@ WizardStyle=modern dark includetitlebar hidebevels
 WizardSizePercent=120,120
 WizardBackColor=#07111F
 WizardBackImageFile=assets\setup-bg.bmp
-WizardBackImageOpacity=165
+WizardBackImageOpacity=255
 WizardImageFile=
 WizardSmallImageFile=
 SetupIconFile=assets\rmrp.ico
@@ -27,22 +27,26 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=admin
 DisableWelcomePage=no
+LanguageDetectionMethod=none
+
+[Languages]
+Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 
 [Files]
 Source: "..\dist\RMRP_Pomoshnik.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}"; Flags: nowait postinstall skipifsilent
 
 [Messages]
-WelcomeLabel1=RMRP ПОМОЩНИК
-WelcomeLabel2=by Kinzec X WOLF\n\nУстановка современной версии помощника по законодательству RMRP.\n\nНажмите «Далее», чтобы продолжить.
+WelcomeLabel1=Добро пожаловать в RMRP Помощник
+WelcomeLabel2=Установите современный помощник по законодательству RMRP версии 1.4.0.
 SelectDirLabel3=Выберите папку для установки RMRP Помощника.
-ReadyLabel1=Почти готово
-ReadyLabel2=Нажмите «Установить», чтобы установить RMRP Помощник.
-FinishedHeadingLabel=Готово
-FinishedLabelNoIcons=RMRP Помощник успешно установлен.
+ReadyLabel1=Всё готово к установке
+ReadyLabel2=Нажмите «Установить», чтобы начать установку RMRP Помощника.
+FinishedHeadingLabel=Установка завершена
+FinishedLabelNoIcons=RMRP Помощник версии 1.4.0 успешно установлен.
