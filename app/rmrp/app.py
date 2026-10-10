@@ -24,6 +24,7 @@ from .pages_home import HomePages
 from .pages_laws import LawPages
 from .pages_profile import ProfilePages
 from .pages_tests import TestPages
+from .pages_update import UpdatePages
 
 try:
     import winsound
@@ -35,7 +36,7 @@ DEFAULT_SETTINGS = {
     "remember": True, "last_login": "",
     "discord_enabled": False, "discord_app_id": "", "discord_show_activity": True, "discord_show_law": True,
     "discord_show_timer": True, "discord_status": "Изучает законы на RMRP — Помощник", "discord_hide": False,
-    "overlay_enabled": True, "overlay_hotkey": "F10",
+    "overlay_enabled": True, "overlay_hotkey": "F10", "auto_update": True, "skip_version": "",
 }
 
 NAV_MAIN = [
@@ -55,7 +56,7 @@ PAGE_TITLES = {"home": "Главная", "laws": "Законодательств
                "settings": "Настройки", "admin": "Админ-панель"}
 
 
-class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, ProfilePages, tk.Tk):
+class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, ProfilePages, UpdatePages, tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
         self.title(f"{APP_NAME} v{APP_VERSION} — by {APP_PUBLISHER}")
@@ -101,6 +102,7 @@ class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, Profil
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         self.show_login()
         self.after(HEARTBEAT_SEC * 1000, self._heartbeat)
+        self.schedule_update_checks()
 
     # ------------------------------------------------------------------ настройки
     def load_settings(self):

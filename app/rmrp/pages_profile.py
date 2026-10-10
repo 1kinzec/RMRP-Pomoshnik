@@ -238,7 +238,9 @@ class ProfilePages:
             ui.RButton(fd, "Сохранить для всех", save_id, "secondary", height=34, size=9).pack(anchor="e", pady=(8, 0))
 
         ab = section("О приложении", f"{APP_NAME} v{APP_VERSION}  •  {APP_PUBLISHER}")
-        ui.lbl(ab, "Законодательство, обучение и тесты для RMRP.", 9, False, MUTED).pack(anchor="w")
+        ui.lbl(ab, "Законодательство, обучение и тесты для RMRP.", 9, False, MUTED).pack(anchor="w", pady=(0, 8))
+        switch_row(ab, "Проверять обновления автоматически", "auto_update")
+        ui.RButton(ab, "Проверить обновления", lambda: self.check_updates(manual=True), "secondary", icon="⟳", height=34, size=9).pack(anchor="w", pady=(6, 0))
 
     # ================================================================== Discord Rich Presence
     def discord_dialog(self):

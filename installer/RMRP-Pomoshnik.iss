@@ -1,5 +1,7 @@
 #define MyAppName "RMRP Помощник"
-#define MyAppVersion "2.0.1"
+#ifndef MyAppVersion
+  #define MyAppVersion "2.2.0"
+#endif
 #define MyAppPublisher "Kinzec X WOLF"
 #define MyAppExeName "RMRP_Pomoshnik.exe"
 
@@ -27,6 +29,12 @@ ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=admin
 DisableWelcomePage=no
+CloseApplications=yes
+RestartApplications=no
+VersionInfoVersion={#MyAppVersion}
+VersionInfoProductName={#MyAppName}
+AppCopyright=© {#MyAppPublisher}
+UsePreviousAppDir=yes
 LanguageDetectionMethod=none
 
 [Languages]
@@ -35,18 +43,25 @@ Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
 [Files]
 Source: "..\dist\RMRP_Pomoshnik.exe"; DestDir: "{app}"; Flags: ignoreversion
 
+[Tasks]
+Name: "desktopicon"; Description: "Создать ярлык на рабочем столе"; GroupDescription: "Ярлыки:"
+Name: "autostart"; Description: "Запускать вместе с Windows"; GroupDescription: "Дополнительно:"; Flags: unchecked
+
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; после тихого обновления из приложения — сразу запускаем новую версию
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 
 [Messages]
 WelcomeLabel1=Добро пожаловать в RMRP Помощник
-WelcomeLabel2=Установите помощник по законодательству RMRP: законы, тесты, оверлей и Discord. Версия 2.0.1.
+WelcomeLabel2=Установите помощник по законодательству RMRP: законы, тесты, оверлей и Discord. Версия {#MyAppVersion}.
 SelectDirLabel3=Выберите папку для установки RMRP Помощника.
 ReadyLabel1=Всё готово к установке
 ReadyLabel2=Нажмите «Установить», чтобы начать установку RMRP Помощника.
 FinishedHeadingLabel=Установка завершена
-FinishedLabelNoIcons=RMRP Помощник версии 2.0.1 успешно установлен.
+FinishedLabelNoIcons=RMRP Помощник версии {#MyAppVersion} успешно установлен.

@@ -259,6 +259,15 @@ def main():
     app.add_test()
     app.add_announcement()
     app.overlay.show()
+    from rmrp import updater
+    updater.GITHUB_REPO = "o/r"
+    updater.check_latest = lambda: {"version": "9.9.9", "notes": "n", "name": "RMRP-Pomoshnik-Setup-9.9.9.exe", "url": "https://github.com/x", "size": 1,
+                                    "sha_url": None, "page": "https://github.com/o/r/releases"}
+    app.check_updates(manual=True)
+    wait_threads()
+    app.update_dialog(updater.check_latest())
+    app.navigate("settings")
+    wait_threads()
     app.logout()
     wait_threads()
     if errors:
