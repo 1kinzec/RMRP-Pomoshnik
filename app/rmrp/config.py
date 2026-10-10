@@ -2,7 +2,7 @@
 import os
 
 APP_NAME = "RMRP Помощник"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.0.1"
 APP_PUBLISHER = "Kinzec X WOLF"
 
 # Publishable key лежит в клиенте намеренно. Secret/service_role ключ сюда добавлять НЕЛЬЗЯ:

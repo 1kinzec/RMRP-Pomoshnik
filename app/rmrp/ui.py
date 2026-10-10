@@ -14,8 +14,22 @@ from .config import (ACCENT, ACCENT_HI, ACCENT_LO, ACCENT_TXT, BG, BORDER, BORDE
 
 try:  # Pillow необязателен: без него просто не будет картинок
     from PIL import Image, ImageDraw, ImageFilter, ImageTk
-except Exception:  # noqa: BLE001
+except Exception as _e:  # noqa: BLE001
     Image = ImageDraw = ImageFilter = ImageTk = None
+    _PIL_ERROR = repr(_e)
+else:
+    _PIL_ERROR = ""
+
+
+def log_problem(text):
+    """Пишет диагностику в %APPDATA%/RMRP-Pomoshnik/ui.log (чтобы понять, почему нет картинок и т.п.)."""
+    try:
+        from .config import settings_dir
+        os.makedirs(settings_dir(), exist_ok=True)
+        with open(os.path.join(settings_dir(), "ui.log"), "a", encoding="utf-8") as f:
+            f.write(text + "\n")
+    except Exception:  # noqa: BLE001
+        pass
 
 
 # ----------------------------------------------------------------------------- утилиты
@@ -113,6 +127,9 @@ def pil_to_tk(img):
 
 def load_image(name, size=None):
     if Image is None:
+        if _PIL_ERROR and ("pil", 0) not in _img_cache:
+            _img_cache[("pil", 0)] = 1
+            log_problem("Pillow недоступен: " + _PIL_ERROR)
         return None
     key = (name, size)
     if key in _img_cache:
@@ -122,7 +139,8 @@ def load_image(name, size=None):
         if size:
             img = img.resize(size, Image.LANCZOS)
         _img_cache[key] = ImageTk.PhotoImage(img)
-    except Exception:  # noqa: BLE001
+    except Exception as e:  # noqa: BLE001
+        log_problem(f"Не загрузилась картинка {name}: {e!r}")
         _img_cache[key] = None
     return _img_cache[key]
 
@@ -222,8 +240,13 @@ class Avatar(tk.Canvas):
 
 
 # ----------------------------------------------------------------------------- Card
-class Card(tk.Canvas):
-    """Скруглённая карточка. Содержимое кладётся в card.body (обычный Frame)."""
+class Card(tk.Frame):
+    """Скруглённая карточка. Содержимое кладётся в card.body.
+
+    Это обычный Frame: размер определяется содержимым (pack), скруглённый фон рисуется на Canvas,
+    лежащем под содержимым. (Вариант «Canvas + create_window» не годится: Tk не показывает окно за
+    пределами видимой области холста, и карточка без заданной высоты схлопывалась в полоску.)
+    """
 
     def __init__(self, parent, bg=PANEL, border=BORDER, radius=12, pad=14, outer=None, height=None, hover_bg=None,
                  hover_border=None, **kw):
@@ -231,32 +254,25 @@ class Card(tk.Canvas):
         self._hover_bg = hover_bg
         self._hover_border = hover_border
         self._fixed = height
-        super().__init__(parent, bg=outer or parent_bg(parent), highlightthickness=0, bd=0, height=height or 10, **kw)
+        outer = outer or parent_bg(parent)
+        super().__init__(parent, bg=outer, bd=0, highlightthickness=0, **kw)
+        if height:
+            self.configure(height=height)
+            self.pack_propagate(False)
+        self._canvas = tk.Canvas(self, bg=outer, highlightthickness=0, bd=0)
+        self._canvas.place(x=0, y=0, relwidth=1, relheight=1)
         self.body = tk.Frame(self, bg=bg)
-        self._win = self.create_window(pad, pad, anchor="nw", window=self.body)
+        self.body.pack(fill="both", expand=True, padx=pad, pady=pad)
         self._cur = (bg, border)
         self._last = (0, 0)
-        self.bind("<Configure>", self._on_canvas)
-        self.body.bind("<Configure>", self._on_body)
-
-    def _on_canvas(self, e):
-        self.itemconfigure(self._win, width=max(1, e.width - 2 * self._pad))
-        if self._fixed:
-            self.itemconfigure(self._win, height=max(1, e.height - 2 * self._pad))
-        self._redraw(e.width, e.height)
-
-    def _on_body(self, e):
-        if not self._fixed:
-            h = e.height + 2 * self._pad
-            if int(float(self.cget("height"))) != h:
-                self.configure(height=h)
+        self._canvas.bind("<Configure>", lambda e: self._redraw(e.width, e.height))
 
     def _redraw(self, w, h):
         self._last = (w, h)
-        self.delete("bgshape")
+        c = self._canvas
+        c.delete("bgshape")
         fill, outline = self._cur
-        self.create_polygon(rr_points(1, 1, w - 1, h - 1, self._radius), smooth=True, fill=fill, outline=outline, width=1, tags="bgshape")
-        self.tag_lower("bgshape")
+        c.create_polygon(rr_points(1, 1, max(2, w - 1), max(2, h - 1), self._radius), smooth=True, fill=fill, outline=outline, width=1, tags="bgshape")
 
     def set_colors(self, bg=None, border=None):
         bg = bg or self._bg

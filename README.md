@@ -39,7 +39,7 @@
 
 ## Сборка
 
-GitHub → Actions → **Build RMRP Помощник v2.0.0 for Windows** → Run workflow. Сначала выполняются тесты (парсер, поиск, Discord IPC, дымовой тест интерфейса), затем собираются EXE и установщик.
+GitHub → Actions → **Build RMRP Помощник v2.0.1 for Windows** → Run workflow. Сначала выполняются тесты (парсер, поиск, Discord IPC, дымовой тест интерфейса), затем собираются EXE и установщик.
 
 Локальные тесты: `python3 -I -m unittest discover -s tests` и `python3 -I tests/smoke_gui.py`.
 
