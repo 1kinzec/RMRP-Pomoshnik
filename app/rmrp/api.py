@@ -137,13 +137,20 @@ class Supabase:
             prefer += ",resolution=" + ("ignore-duplicates" if ignore_duplicates else "merge-duplicates")
         return self.request(f"/rest/v1/{table}?" + _qs(params), "POST", rows, headers={"Prefer": prefer})
 
-    def update(self, table, filters, values, select="*"):
+    def update(self, table, filters, values, select="*", expect=False):
         params = {"select": select}
         params.update(filters)
-        return self.request(f"/rest/v1/{table}?" + _qs(params), "PATCH", values, headers={"Prefer": "return=representation"})
+        res = self.request(f"/rest/v1/{table}?" + _qs(params), "PATCH", values, headers={"Prefer": "return=representation"})
+        if expect and not res:
+            raise ApiError("Не сохранено: нет прав (выполните migration_v2_2.sql в Supabase) или запись удалена.", 403)
+        return res
 
-    def delete(self, table, filters):
-        return self.request(f"/rest/v1/{table}?" + _qs(filters), "DELETE", headers={"Prefer": "return=minimal"})
+    def delete(self, table, filters, expect=False):
+        """expect=True: если ни одна строка не удалена (нет прав по RLS или уже удалена) — ApiError, а не тихий «успех»."""
+        res = self.request(f"/rest/v1/{table}?" + _qs(filters), "DELETE", headers={"Prefer": "return=representation"})
+        if expect and not res:
+            raise ApiError("Не удалено: нет прав (выполните migration_v2_2.sql в Supabase) или запись уже удалена.", 403)
+        return res
 
     def rpc(self, fn, payload=None):
         return self.request(f"/rest/v1/rpc/{fn}", "POST", payload or {})

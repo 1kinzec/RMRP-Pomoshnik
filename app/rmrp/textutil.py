@@ -1,4 +1,5 @@
 """Разбор текстов форума, поиск по статьям, ответы помощника. Без зависимостей от GUI."""
+import random
 import re
 from datetime import datetime, timezone
 from html import unescape
@@ -145,26 +146,111 @@ def query_terms(text, limit=6):
 
 LAW_HINTS = {
     "ук": "УК РФ", "уголовн": "УК РФ", "коап": "КоАП РФ", "административн": "КоАП РФ",
-    "пк": "ПК РФ", "процессуальн": "ПК РФ", "полици": "74-ФЗ", "фсвнг": "18-ФЗ", "гвард": "18-ФЗ",
-    "госслужб": "54-ФЗ", "государственной служб": "54-ФЗ",
+    "пк": "ПК РФ", "упк": "ПК РФ", "процессуальн": "ПК РФ", "полици": "74-ФЗ", "74-фз": "74-ФЗ", "фсвнг": "18-ФЗ", "гвард": "18-ФЗ",
+    "18-фз": "18-ФЗ", "госслужб": "54-ФЗ", "государственной служб": "54-ФЗ", "54-фз": "54-ФЗ",
 }
+_NUM = r"\d+(?:[.-]\d+)*"
+_CODE = r"(?:ук|коап|упк|пк)"
+
+
+def law_hint(text):
+    t = text.lower().replace("ё", "е")
+    for hint, number in LAW_HINTS.items():
+        tail = r"(?![а-яa-z])" if len(hint) <= 4 else ""
+        if re.search(r"(?<![а-яa-z0-9-])" + re.escape(hint) + tail, t):
+            return number
+    return None
 
 
 def parse_article_ref(text):
-    """«статья 12», «ст. 228.1», «ук 319» -> (номер, law_number|None) либо None."""
-    t = text.lower()
-    m = re.search(r"(?:ст(?:атья|атьи|атье|атью)?\.?\s*)(\d+(?:[.-]\d+)*)", t)
-    law = None
-    for hint, number in LAW_HINTS.items():
-        if re.search(r"(?<![а-яa-z])" + re.escape(hint), t):
-            law = number
-            break
-    if m:
-        return m.group(1), law
-    m = re.fullmatch(r"\s*(?:ук|коап|пк|фз)?\s*(?:рф)?\s*(\d+(?:[.-]\d+)*)\s*", t)
-    if m:
-        return m.group(1), law
+    """«статья 12», «ст. 228.1 УК», «ук 319», «89 ук рф», «ук рф 89», «89» -> (номер, law_number|None) либо None."""
+    t = text.lower().replace("ё", "е")
+    law = law_hint(t)
+    pats = [
+        r"(?<![а-яa-z])ст(?:атья|атьи|атье|атью|\.)?\s*(?:№\s*)?(" + _NUM + r")(?![\d])(?!\s*-?\s*фз)",
+        r"(?<![\d.-])(" + _NUM + r")\s*(?:-?\s*(?:я|ю|й|ой))?\s*(?:ст(?:атья|атьи|атье|атью|\.)?\s*)?(?:" + _CODE + r")(?![а-яa-z])",
+        r"(?<![а-яa-z])" + _CODE + r"\s*(?:рф\s*)?(?:ст(?:атья|\.)?\s*)?(?:№\s*)?(" + _NUM + r")(?![\d]|\s*-?\s*фз)",
+        r"(?<![а-яa-z])(?:" + _CODE + r"\s*)?(?:рф\s*)?(" + _NUM + r")\s*(?:рф)?\s*",
+    ]
+    for i, pat in enumerate(pats):
+        m = re.search(pat, t) if i < 3 else re.fullmatch(r"\s*" + pat + r"\s*", t)
+        if m:
+            return m.group(1), law
     return None
+
+
+# --------------------------------------------------------------------------- «разговор»
+_GREET = (r"(?:привет\w*|здравствуй\w*|здорово|здарова|хай|хей|ку|салам|добр(?:ый|ое|ого)\s+(?:день|вечер|утро|ночи)|доброго\s+времени\s+суток|"
+          r"hello|hi|hey|приветствую|алло|йоу)")
+
+
+def _norm(text):
+    t = text.lower().replace("ё", "е")
+    return re.sub(r"\s+", " ", re.sub(r"[^\w\s-]", " ", t)).strip()
+
+
+def strip_greeting(text):
+    """Убирает приветствие в начале: «привет, что грозит за …» -> «что грозит за …» (остальное не трогает)."""
+    low = text.lower().replace("ё", "е")
+    m = re.match(r"^\W*(?:" + _GREET + r"[\W]*)+(?:(?:бот|помощник|нейросеть|друг|братан|бро)\b\W*)?", low)
+    return text[m.end():].strip() if m else text.strip()
+
+
+SMALLTALK = [
+    ("greet", r"(?:" + _GREET + r")(?:\s+(?:бот|помощник|нейросеть|друг|всем|народ|братан|бро))?",
+     ["Привет! Я помощник по законам RMRP. Назовите номер статьи («89 УК РФ») или опишите ситуацию, например «что грозит за оскорбление сотрудника», и я найду норму в базе.",
+      "Здравствуйте! Чем помочь? Могу найти статью по номеру, объяснить норму или подобрать закон под вашу ситуацию."]),
+    ("how", r"(?:как (?:твои )?дела|как ты|как жизнь|как сам|как поживаешь|что нового|как настроение|че как|чо как|как оно)(?: у тебя| сегодня)?",
+     ["Всё хорошо, работаю с базой законов. А у вас какой вопрос: нужна статья или разбор ситуации?",
+      "Отлично, спасибо! Чем могу помочь по законам RMRP?"]),
+    ("thanks", r"(?:спасибо|благодарю|спс|благодарствую|мерси|thx|thanks|пасиб\w*)(?: большое| тебе| вам| огромное)?",
+     ["Пожалуйста! Если нужна ещё статья или разбор, пишите.", "Рад помочь! Обращайтесь."]),
+    ("bye", r"(?:пока|до свидания|досвидания|до встречи|удачи|бывай|всего доброго|прощай|bye)",
+     ["До встречи! Удачной службы."]),
+    ("ok", r"(?:ок|окей|ладно|понятно|хорошо|ясно|понял|поняла|круто|отлично|супер|ага|угу|ну ладно|класс)",
+     ["Хорошо. Если появятся вопросы по законам, спрашивайте."]),
+    ("who", r"(?:кто ты|ты кто|кто такой|как тебя зовут|как твое имя|ты бот|ты нейросеть|ты человек|ты робот|что ты такое|ты настоящий)",
+     ["Я помощник RMRP: ищу статьи в базе законов проекта (УК, КоАП, ПК, ФЗ «О полиции» и другие) и отвечаю по ним цитатами. Я не человек и не выдумываю нормы: если в базе ничего нет, так и скажу."]),
+    ("help", r"(?:что (?:ты )?(?:умеешь|можешь)|помощь|помоги(?:те)?|help|как (?:тобой |с тобой )?пользоваться|как это работает|что делать|с чего начать|команды)",
+     ["Вот что я умею:\n• найти статью по номеру: «89 УК РФ», «статья 319», «ст. 228.1 КоАП»;\n• подобрать нормы под ситуацию: «что грозит за оскорбление сотрудника»;\n• показать статью полностью: напишите «подробнее» после ответа.\nВсе ответы строятся только на статьях из базы."]),
+]
+
+
+def smalltalk(text):
+    """Ответ на светскую беседу, если сообщение целиком такое; иначе None."""
+    n = _norm(text)
+    if not n or len(n) > 60:
+        return None
+    for kind, pat, replies in SMALLTALK:
+        if re.fullmatch(r"(?:" + pat + r")(?:\s+(?:" + pat + r"))*", n):
+            return random.choice(replies)
+    rest = _norm(strip_greeting(text))
+    if rest != n:
+        if not rest:
+            return SMALLTALK[0][2][0]
+        for kind, pat, replies in SMALLTALK[1:]:
+            if re.fullmatch(pat, rest):
+                return "Привет! " + random.choice(replies)
+    return None
+
+
+def is_followup(text):
+    n = _norm(text)
+    return bool(re.fullmatch(r"(?:а |и )?(?:подробнее|подробней|полностью|целиком|весь текст|дальше|еще|развернуто|расскажи (?:подробнее|больше|еще)|"
+                             r"покажи (?:всю|полностью|текст|статью)|что там|что в ней|открой|прочитай)(?: статью| текст| ее)?", n))
+
+
+def is_relevant(row, terms):
+    """Статья подходит под вопрос: совпала хотя бы половина значимых слов (для одного слова — в названии или не меньше двух раз в тексте)."""
+    if not terms:
+        return False
+    title = (row.get("title") or "").lower().replace("ё", "е")
+    body = (row.get("content") or "").lower().replace("ё", "е")
+    hit = sum(1 for t in terms if t in title or t in body)
+    if len(terms) == 1:
+        t = terms[0]
+        return t in title or body.count(t) >= 2
+    return hit * 2 >= len(terms)
 
 
 def or_filter(terms, fields=("title", "content")):
@@ -234,3 +320,82 @@ def best_sentences(content, terms, max_chars=520):
         text.append(p)
         total += len(p)
     return " ".join(text)[:max_chars + 80]
+
+
+# --------------------------------------------------------------------------- админ-аналитика и фильтры
+def count_since(rows, field, days, now=None):
+    """Сколько строк, у которых поле-дата не старше days дней."""
+    now = now or datetime.now(timezone.utc)
+    n = 0
+    for r in rows:
+        d = parse_ts(r.get(field))
+        if d and (now - d).total_seconds() <= days * 86400:
+            n += 1
+    return n
+
+
+def top_items(rows, field, limit=5):
+    """Самые частые значения поля без учёта регистра и пунктуации: [(текст, сколько)]."""
+    counts, shown = {}, {}
+    for r in rows:
+        raw = (r.get(field) or "").strip()
+        key = re.sub(r"[^\w\s.-]", "", raw.lower().replace("ё", "е")).strip()
+        if len(key) < 2:
+            continue
+        counts[key] = counts.get(key, 0) + 1
+        shown.setdefault(key, raw[:70])
+    best = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))[:limit]
+    return [(shown[k], n) for k, n in best]
+
+
+def filter_users(rows, query="", role="", status="", online_only=False, window=180, now=None):
+    q = (query or "").strip().lower()
+    out = []
+    for r in rows:
+        if q and q not in (r.get("username") or "").lower() and q not in (r.get("display_name") or "").lower():
+            continue
+        if role and r.get("role") != role:
+            continue
+        if status and r.get("status") != status:
+            continue
+        if online_only and not is_online(r.get("last_seen_at"), window, now):
+            continue
+        out.append(r)
+    return out
+
+
+def filter_reports(rows, query="", status=""):
+    q = (query or "").strip().lower()
+    out = []
+    for r in rows:
+        if status and r.get("status") != status:
+            continue
+        hay = " ".join(str(x) for x in (r.get("reason"), r.get("description"), (r.get("author") or {}).get("username"),
+                                       (r.get("target") or {}).get("username")) if x).lower()
+        if q and q not in hay:
+            continue
+        out.append(r)
+    return out
+
+
+def filter_audit(rows, query="", action="", days=0, now=None):
+    q = (query or "").strip().lower()
+    now = now or datetime.now(timezone.utc)
+    out = []
+    for r in rows:
+        if action and r.get("action") != action:
+            continue
+        if days:
+            d = parse_ts(r.get("created_at"))
+            if not d or (now - d).total_seconds() > days * 86400:
+                continue
+        hay = " ".join(str(x) for x in ((r.get("profiles") or {}).get("username"), r.get("action"), r.get("target_type"), r.get("target_id")) if x).lower()
+        if q and q not in hay:
+            continue
+        out.append(r)
+    return out
+
+
+def in_filter(ids):
+    """Значение для PostgREST: id=in.(a,b,c)."""
+    return "in.(" + ",".join(str(i) for i in ids) + ")"

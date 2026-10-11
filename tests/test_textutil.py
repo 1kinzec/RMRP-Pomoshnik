@@ -66,6 +66,28 @@ class SearchTests(unittest.TestCase):
         self.assertEqual(T.parse_article_ref("ст. 228.1 УК"), ("228.1", "УК РФ"))
         self.assertEqual(T.parse_article_ref("ук 319"), ("319", "УК РФ"))
         self.assertIsNone(T.parse_article_ref("права задержанного"))
+        self.assertEqual(T.parse_article_ref("89 ук рф"), ("89", "УК РФ"))
+        self.assertEqual(T.parse_article_ref("ук рф 89"), ("89", "УК РФ"))
+        self.assertEqual(T.parse_article_ref("11.2 УПК РФ"), ("11.2", "ПК РФ"))
+        self.assertEqual(T.parse_article_ref("ст 5 74-фз"), ("5", "74-ФЗ"))
+        self.assertEqual(T.parse_article_ref("89"), ("89", None))
+        self.assertIsNone(T.parse_article_ref("74-фз"))
+        self.assertIsNone(T.parse_article_ref("уклонение от службы"))
+
+    def test_smalltalk(self):
+        for q in ("привет", "Привет!", "как дела", "привет, как дела?", "спасибо", "кто ты", "что ты умеешь", "пока"):
+            self.assertTrue(T.smalltalk(q), q)
+        for q in ("89 ук рф", "привет, что грозит за оскорбление", "оскорбление сотрудника", "права задержанного"):
+            self.assertIsNone(T.smalltalk(q), q)
+        self.assertEqual(T.strip_greeting("Привет, что грозит за оскорбление"), "что грозит за оскорбление")
+        self.assertEqual(T.strip_greeting("ст. 228.1 УК"), "ст. 228.1 УК")
+
+    def test_followup_and_relevance(self):
+        self.assertTrue(T.is_followup("подробнее"))
+        self.assertFalse(T.is_followup("подробнее про оскорбление"))
+        row = {"title": "Оскорбление власти", "content": "штраф за оскорбление"}
+        self.assertTrue(T.is_relevant(row, T.query_terms("оскорбление власти")))
+        self.assertFalse(T.is_relevant(row, T.query_terms("рецепт борща")))
 
     def test_or_filter(self):
         self.assertEqual(T.or_filter(["абв"], ("title",)), "(title.ilike.*абв*)")
@@ -85,6 +107,30 @@ class SearchTests(unittest.TestCase):
     def test_natural_sort(self):
         nums = ["10", "2", "2.1", "228-1", "1"]
         self.assertEqual(sorted(nums, key=T.natural_key), ["1", "2", "2.1", "10", "228-1"])
+
+    def test_admin_helpers(self):
+        from datetime import datetime, timedelta, timezone
+        now = datetime(2026, 10, 11, 12, 0, tzinfo=timezone.utc)
+        iso = lambda d: (now - timedelta(days=d)).isoformat()
+        users = [{"username": "kinzec", "role": "FOUNDER", "status": "ACTIVE", "last_seen_at": iso(0), "created_at": iso(30)},
+                 {"username": "alex", "role": "USER", "status": "BLOCKED", "last_seen_at": iso(5), "created_at": iso(2)},
+                 {"username": "bob", "display_name": "Боб", "role": "USER", "status": "ACTIVE", "last_seen_at": iso(5), "created_at": iso(3)}]
+        self.assertEqual(T.count_since(users, "created_at", 7, now), 2)
+        self.assertEqual([u["username"] for u in T.filter_users(users, "", "USER")], ["alex", "bob"])
+        self.assertEqual([u["username"] for u in T.filter_users(users, "боб")], ["bob"])
+        self.assertEqual([u["username"] for u in T.filter_users(users, "", "", "BLOCKED")], ["alex"])
+        self.assertEqual([u["username"] for u in T.filter_users(users, "", "", "ACTIVE", True, 180, now)], ["kinzec"])
+        self.assertEqual(T.top_items([{"q": "Статья 12"}, {"q": "статья 12!"}, {"q": "а"}, {"q": "штраф"}], "q"), [("Статья 12", 2), ("штраф", 1)])
+        reports = [{"reason": "Баг", "description": "не открывается", "status": "NEW", "author": {"username": "alex"}},
+                   {"reason": "Идея", "description": "темная тема", "status": "RESOLVED", "author": {"username": "bob"}}]
+        self.assertEqual(len(T.filter_reports(reports, "", "NEW")), 1)
+        self.assertEqual(T.filter_reports(reports, "bob")[0]["reason"], "Идея")
+        logs = [{"created_at": iso(0), "action": "Удалён закон", "profiles": {"username": "kinzec"}},
+                {"created_at": iso(20), "action": "Статус жалобы", "profiles": {"username": "alex"}}]
+        self.assertEqual(len(T.filter_audit(logs, days=7, now=now)), 1)
+        self.assertEqual(T.filter_audit(logs, "alex")[0]["action"], "Статус жалобы")
+        self.assertEqual(len(T.filter_audit(logs, "", "Удалён закон", now=now)), 1)
+        self.assertEqual(T.in_filter(["a", 2]), "in.(a,2)")
 
     def test_online(self):
         from datetime import datetime, timezone, timedelta

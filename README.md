@@ -20,10 +20,12 @@
 
 1. `rmrp_database.sql`
 2. `release_migration.sql`
-3. **`migration_v2.sql`** ← новое
-4. `RMRP_PRANKS_AND_PROFILE.sql` (если ещё не выполняли)
-5. `RMRP_LAWS_SYNC.sql`
-6. `FOUNDER_SETUP.sql` — заменить `EMAIL_ОСНОВАТЕЛЯ` на ваш email
+3. **`migration_v2.sql`**
+4. **`migration_v2_2.sql`** ← новое: права админа/основателя на удаление жалоб, законов, тестов
+5. **`migration_v2_3.sql`** ← новое: статистика запросов для сводки админки
+6. `RMRP_PRANKS_AND_PROFILE.sql` (если ещё не выполняли)
+7. `RMRP_LAWS_SYNC.sql`
+8. `FOUNDER_SETUP.sql` — заменить `EMAIL_ОСНОВАТЕЛЯ` на ваш email
 
 Затем в приложении: **Админ-панель → Законодательство → Синхронизировать RMRP** (загрузит статьи вместе с главами). Другие законы добавляются кнопкой «Добавить закон» со ссылкой на тему форума — они синхронизируются вместе с остальными.
 
@@ -62,4 +64,5 @@ app/RMRP_Pomoshnik.pyw      точка входа
 app/rmrp/                   config, api, ui (виджеты), app (окно), pages_*.py, overlay, discord_rpc, hotkey, textutil
 tests/                      юнит-тесты и дымовой тест интерфейса
 migration_v2.sql            миграция БД 2.0
+migration_v2_2.sql          права на удаление и правку (2.3)
 ```

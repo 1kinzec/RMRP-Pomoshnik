@@ -185,13 +185,13 @@ class FakeDB:
         rows = rows if isinstance(rows, list) else [rows]
         return [dict(r, id=99) for r in rows]
 
-    def update(self, name, filters, values, select="*"):
+    def update(self, name, filters, values, select="*", expect=False):
         self.calls.append(("update", name, values))
         return [values]
 
-    def delete(self, name, filters):
+    def delete(self, name, filters, expect=False):
         self.calls.append(("delete", name, filters))
-        return {}
+        return [{"id": 1}]
 
     def rpc(self, fn, payload=None):
         return "a@b.c"
@@ -250,6 +250,41 @@ def main():
     assert "штраф" in ans and src, ans
     ans, src = app._compose("zzzz", [])
     assert "не буду придумывать" in ans
+    # правка и удаление админом
+    law = app.db.data["laws"][0]
+    art = app.db.data["law_articles"][0]
+    t = app.db.data["tests"][0]
+    ui_mod = sys.modules["rmrp.ui"]
+    ui_mod.confirm = lambda *a, **k: True
+    app.edit_article(law, art)
+    app.delete_article(law, art)
+    app.delete_law(law)
+    app.edit_test(t)
+    app.delete_test(t)
+    app.questions_dialog(t)
+    app.edit_question(t, app.db.data["questions"][0])
+    app._del_question(t, app.db.data["questions"][0], W())
+    app.add_question(1)
+    app.delete_report(app.db.data["reports"][0])
+    app.delete_closed_reports()
+    wait_threads()
+    kinds = {(c[0], c[1]) for c in app.db.calls}
+    for need in [("delete", "law_articles"), ("delete", "laws"), ("delete", "tests"), ("delete", "questions"), ("delete", "reports")]:
+        assert need in kinds, need
+    # нейросеть: беседа, номер статьи, «подробнее», вопрос не по теме
+    a, src = app._answer("привет")
+    assert not src and "помощник" in a.lower() or "помочь" in a.lower(), a
+    a, src = app._answer("319 ук рф")
+    assert src and src[0]["article_number"] == "319" and "Оскорбление" in a, a
+    a, src = app._answer("89 ук рф")
+    assert not src and "нет" in a, a
+    app._ai_last = app.search_articles("статья 319", 1)[0]
+    a, src = app._answer("подробнее")
+    assert "штрафом" in a, a
+    a, src = app._answer("расскажи рецепт борща")
+    assert not src and "не буду придумывать" in a, a
+    a, src = app._answer("Привет, что грозит за оскорбление власти")
+    assert src and src[0]["article_number"] == "319", a
     app.show_screamer()
     app.discord_dialog()
     app.sync_laws()

@@ -1,6 +1,6 @@
 #define MyAppName "RMRP Помощник"
 #ifndef MyAppVersion
-  #define MyAppVersion "2.2.0"
+  #define MyAppVersion "2.4.1"
 #endif
 #define MyAppPublisher "Kinzec X WOLF"
 #define MyAppExeName "RMRP_Pomoshnik.exe"
@@ -18,12 +18,9 @@ OutputBaseFilename=RMRP-Pomoshnik-Setup-{#MyAppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern dark includetitlebar hidebevels
-WizardSizePercent=120,120
-WizardBackColor=#07111F
-WizardBackImageFile=assets\setup-bg.bmp
-WizardBackImageOpacity=255
-WizardImageFile=
-WizardSmallImageFile=
+WizardSizePercent=110,110
+WizardImageFile=assets\wizard-164x314.bmp,assets\wizard-192x366.bmp,assets\wizard-246x459.bmp,assets\wizard-328x628.bmp
+WizardSmallImageFile=assets\small-55.bmp,assets\small-64.bmp,assets\small-80.bmp,assets\small-110.bmp
 SetupIconFile=assets\rmrp.ico
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}
@@ -50,7 +47,7 @@ Name: "autostart"; Description: "Запускать вместе с Windows"; Gr
 [Icons]
 Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
-Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
+Name: "{commonstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: autostart
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Запустить {#MyAppName}"; Flags: nowait postinstall skipifsilent
@@ -59,9 +56,10 @@ Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 
 [Messages]
 WelcomeLabel1=Добро пожаловать в RMRP Помощник
-WelcomeLabel2=Установите помощник по законодательству RMRP: законы, тесты, оверлей и Discord. Версия {#MyAppVersion}.
+WelcomeLabel2=Помощник по законодательству RMRP: законы и поиск по статьям, ИИ-помощник, тесты, оверлей по F10 и Discord.%n%nВерсия {#MyAppVersion}. Дальше приложение обновляется само.
 SelectDirLabel3=Выберите папку для установки RMRP Помощника.
 ReadyLabel1=Всё готово к установке
 ReadyLabel2=Нажмите «Установить», чтобы начать установку RMRP Помощника.
 FinishedHeadingLabel=Установка завершена
 FinishedLabelNoIcons=RMRP Помощник версии {#MyAppVersion} успешно установлен.
+FinishedLabel=RMRP Помощник версии {#MyAppVersion} успешно установлен. Нажмите «Завершить», чтобы закрыть мастер.

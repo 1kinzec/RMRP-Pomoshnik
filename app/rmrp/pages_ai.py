@@ -7,7 +7,7 @@ from .api import ApiError
 from .config import ACCENT, ACCENT_LO, ACCENT_TXT, BG, BORDER2, FONT, MUTED, PANEL, PANEL2, TEXT, TEXT2
 
 QUICK = ["Какие права есть у задержанного?", "Можно ли провести досмотр?", "Что грозит за неповиновение?",
-         "Какое наказание за оскорбление сотрудника полиции?", "статья 12"]
+         "Какое наказание за оскорбление сотрудника полиции?", "89 УК РФ"]
 BOT_BG = ui.mix(PANEL, ACCENT, .10)
 
 
@@ -28,7 +28,7 @@ class AiPages:
         ui.lbl(wrap, "Ответы формируются только из статей в базе. Если подходящего материала нет — помощник так и скажет, ничего не придумывая.",
                8, False, MUTED).pack(side="bottom", anchor="w", pady=(6, 0))
 
-        self._bot_bubble("Привет! Я помогу найти статью, объяснить норму или показать основание ответа.", chips=QUICK, on_chip=lambda q: (field.set(q), send()))
+        self._bot_bubble("Привет! Назовите номер статьи («89 УК РФ») или опишите ситуацию, и я найду норму в базе законов RMRP.", chips=QUICK, on_chip=lambda q: (field.set(q), send()))
 
         def send():
             q = field.get()
@@ -40,12 +40,13 @@ class AiPages:
             thinking = self._bot_bubble("Ищу в базе законов…")
 
             def work():
-                rows = self.search_articles(q, 6)
-                answer, sources = self._compose(q, rows)
-                if not self.guest:
+                answer, sources = self._answer(q)
+                if sources:
+                    self._ai_last = sources[0]
+                if not self.guest and not T.smalltalk(q):
                     try:
                         self.db.insert("ai_history", {"user_id": self.uid, "question": q[:1000], "answer": answer[:4000],
-                                                      "law_article_id": rows[0]["id"] if rows else None})
+                                                      "law_article_id": sources[0]["id"] if sources else None})
                     except ApiError:
                         pass
                 return answer, sources
@@ -66,6 +67,49 @@ class AiPages:
         field.focus_entry()
 
     # ------------------------------------------------------------------ составление ответа
+    def _answer(self, q):
+        """Понимает, что спросили: беседа, «подробнее», номер статьи или вопрос по существу."""
+        chat = T.smalltalk(q)
+        if chat:
+            return chat, []
+        text = T.strip_greeting(q) or q
+        last = getattr(self, "_ai_last", None)
+        if T.is_followup(text):
+            if not last:
+                return "Уточните, о какой статье речь: напишите номер («89 УК РФ») или вопрос.", []
+            return self._compose_article(last, full=True), [last]
+        ref = T.parse_article_ref(text)
+        if ref:
+            num, hint = ref
+            rows = self.search_articles(text, 8, strict=False)
+            return self._compose_ref(num, hint, rows)
+        rows = [r for r in self.search_articles(text, 8) if T.is_relevant(r, r.get("terms") or [])]
+        return self._compose(text, rows)
+
+    @staticmethod
+    def _compose_article(r, full=False):
+        content = (r.get("content") or "").strip()
+        limit = 1800 if full else 700
+        body = content if len(content) <= limit else content[:limit].rsplit(" ", 1)[0] + "…"
+        return f"Статья {r['article_number']} ({r['law_short']}) «{r.get('title') or 'без названия'}»:\n\n{body}"
+
+    @classmethod
+    def _compose_ref(cls, num, hint, rows):
+        if not rows:
+            where = f" в {hint}" if hint else ""
+            return (f"Статьи {num}{where} в базе нет. Возможно, закон ещё не загружен или номер указан с опечаткой. "
+                    "Администратор может нажать «Синхронизировать RMRP» в разделе «Законы»."), []
+        top = rows[0]
+        if hint and top.get("law_number") != hint:
+            note = f"В {hint} статьи {num} в базе нет, но такая статья есть в другом законе.\n\n"
+        else:
+            note = ""
+        text = note + cls._compose_article(top)
+        others = [r for r in rows[1:4]]
+        if others:
+            text += "\n\nСтатья с таким номером есть и в: " + "; ".join(r["law_short"] for r in others) + "."
+        return text + "\n\nНапишите «подробнее», чтобы увидеть статью полностью.", [top] + others
+
     @staticmethod
     def _compose(question, rows):
         if not rows:

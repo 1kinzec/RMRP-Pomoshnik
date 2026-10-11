@@ -55,18 +55,23 @@ class LawPages:
         return sorted(rows, key=T.article_sort_key)
 
     # ================================================================== поиск (общий для страницы, оверлея и помощника)
-    def search_articles(self, query, limit=30):
+    def search_articles(self, query, limit=30, strict=True):
+        """Поиск статей. Если указан номер («89 УК РФ»), ищет именно его и не подмешивает случайные совпадения по тексту.
+        strict=False: при указании закона вернуть и статьи с тем же номером из других законов (законы из запроса — первыми)."""
         lmap = self.law_map()
         sel = "id,law_id,article_number,title,content"
-        rows, terms = [], []
+        terms = []
         ref = T.parse_article_ref(query)
         if ref:
             num, law_hint = ref
             rows = self.db.table("law_articles", sel, {"article_number": f"eq.{num}"}, "law_id.asc", 60)
             if law_hint:
                 hinted = [r for r in rows if lmap.get(r["law_id"], {}).get("law_number") == law_hint]
-                rows = hinted or rows
-        if not rows:
+                rows = hinted if strict else hinted + [r for r in rows if r not in hinted]
+            ranked = [(100.0, r) for r in sorted(rows, key=lambda r: (r["law_id"], T.natural_key(r["article_number"])))]
+            if not strict and law_hint:
+                ranked.sort(key=lambda x: lmap.get(x[1]["law_id"], {}).get("law_number") != law_hint)
+        else:
             terms = T.query_terms(query)
             if not terms:
                 terms = [w.lower() for w in re.findall(r"[A-Za-zА-Яа-яЁё0-9]{2,}", query)][:4]
@@ -74,10 +79,7 @@ class LawPages:
             for t in terms[:3]:
                 for r in self.db.table("law_articles", sel, {"or": T.or_filter([t])}, None, 120):
                     seen[r["id"]] = r
-            rows = list(seen.values())
-            ranked = T.rank_articles(rows, terms, query)
-        else:
-            ranked = [(100.0, r) for r in sorted(rows, key=lambda r: (r["law_id"], T.natural_key(r["article_number"])))]
+            ranked = T.rank_articles(list(seen.values()), terms, query)
         out = []
         for score, r in ranked[:limit]:
             law = lmap.get(r["law_id"], {})
@@ -360,6 +362,9 @@ class LawPages:
             ui.RButton(actions, "Копировать", lambda: copy_article(a), "secondary", icon="⧉", height=36).pack(side="left", padx=8)
             ui.RButton(actions, "Спросить помощника", lambda: self.navigate("ai", preset=f"Объясни статью {a['article_number']} {law.get('short_name') or ''}"),
                        "ghost", icon="✦", height=36).pack(side="left")
+            if self.is_staff("ADMIN"):
+                ui.RButton(actions, "Изменить", lambda: self.edit_article(law, a), "secondary", icon="✎", height=36).pack(side="left", padx=(8, 0))
+                ui.RButton(actions, "Удалить", lambda: self.delete_article(law, a), "danger", icon="🗑", height=36).pack(side="left", padx=(8, 0))
 
         def toggle_fav(a):
             if not self.require_login("Избранное"):
