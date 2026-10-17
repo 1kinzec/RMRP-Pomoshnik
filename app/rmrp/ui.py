@@ -239,6 +239,119 @@ class Avatar(tk.Canvas):
             pass
 
 
+# ----------------------------------------------------------------------------- картинки по ссылке
+_remote_pil = {}
+
+
+def fetch_pil(url, max_side=1600):
+    """Скачивает картинку (до 8 МБ) и возвращает PIL.Image; результаты кэшируются. Вызывать из фонового потока."""
+    if url in _remote_pil:
+        return _remote_pil[url]
+    req = urllib.request.Request(url, headers={"User-Agent": "RMRP-Pomoshnik"})
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = r.read(8_000_000)
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    img = img.convert("RGBA")
+    img.thumbnail((max_side, max_side), Image.LANCZOS)
+    if len(_remote_pil) > 60:
+        _remote_pil.pop(next(iter(_remote_pil)))
+    _remote_pil[url] = img
+    return img
+
+
+class RemoteImage(tk.Canvas):
+    """Миниатюра по ссылке фиксированного размера (вписывается с сохранением пропорций). Клик — command()."""
+
+    def __init__(self, parent, url, box=(170, 120), command=None, bg=None):
+        bg = bg or parent_bg(parent)
+        super().__init__(parent, width=box[0], height=box[1], bg=bg, highlightthickness=1, highlightbackground=BORDER, bd=0)
+        self.box, self._photo = box, None
+        self.create_text(box[0] / 2, box[1] / 2, text="Загрузка…" if Image is not None else "Нет Pillow", fill=MUTED, font=font(8), tags="ph")
+        if command:
+            self.configure(cursor="hand2")
+            self.bind("<Button-1>", lambda e: command())
+        if url and Image is not None:
+            threading.Thread(target=self._work, args=(url,), daemon=True).start()
+
+    def _work(self, url):
+        try:
+            img = fetch_pil(url).copy()
+            img.thumbnail(self.box, Image.LANCZOS)
+            self.after(0, lambda: self._show(img))
+        except Exception as e:  # noqa: BLE001
+            msg = "Не загрузилось"
+            log_problem(f"Фото {url}: {e!r}")
+            self.after(0, lambda: self._ph(msg))
+
+    def _ph(self, text):
+        try:
+            if self.winfo_exists():
+                self.itemconfigure("ph", text=text)
+        except tk.TclError:
+            pass
+
+    def _show(self, img):
+        try:
+            if self.winfo_exists():
+                self._photo = ImageTk.PhotoImage(img)
+                self.delete("ph")
+                self.create_image(self.box[0] / 2, self.box[1] / 2, image=self._photo)
+        except tk.TclError:
+            pass
+
+
+def show_image(app, urls, index=0):
+    """Просмотр фото крупно: стрелки ← → листают, Esc закрывает."""
+    if Image is None or not urls:
+        return
+    w = min(1100, app.winfo_screenwidth() - 120)
+    h = min(780, app.winfo_screenheight() - 140)
+    win = modal(app, "Фото", w, h, "#04070d")
+    state = {"i": index % len(urls), "photo": None}
+    cv = tk.Canvas(win, bg="#04070d", highlightthickness=0, bd=0)
+    cv.pack(fill="both", expand=True)
+
+    def render():
+        i = state["i"]
+        cv.delete("all")
+        cv.create_text(w / 2, h / 2, text="Загрузка…", fill=MUTED, font=font(11))
+
+        def work():
+            try:
+                img = fetch_pil(urls[i]).copy()
+                img.thumbnail((w - 20, h - 50), Image.LANCZOS)
+            except Exception as e:  # noqa: BLE001
+                log_problem(f"Просмотр фото {urls[i]}: {e!r}")
+                img = None
+            app.after(0, lambda: draw(i, img))
+        threading.Thread(target=work, daemon=True).start()
+
+    def draw(i, img):
+        try:
+            if state["i"] != i or not win.winfo_exists():
+                return
+            cv.delete("all")
+            if img is None:
+                cv.create_text(w / 2, h / 2, text="Не удалось загрузить фото", fill=DANGER, font=font(11))
+            else:
+                state["photo"] = ImageTk.PhotoImage(img)
+                cv.create_image(w / 2, (h - 30) / 2, image=state["photo"])
+            cv.create_text(w / 2, h - 16, text=f"{i + 1} / {len(urls)}   •   ← → листать, Esc — закрыть", fill=MUTED, font=font(9))
+        except tk.TclError:
+            pass
+
+    def step(d):
+        state["i"] = (state["i"] + d) % len(urls)
+        render()
+    win.bind("<Left>", lambda e: step(-1))
+    win.bind("<Right>", lambda e: step(1))
+    win.bind("<Escape>", lambda e: win.destroy())
+    cv.bind("<Button-1>", lambda e: step(1) if len(urls) > 1 else win.destroy())
+    win.focus_set()
+    render()
+
+
 # ----------------------------------------------------------------------------- Card
 class Card(tk.Frame):
     """Скруглённая карточка. Содержимое кладётся в card.body.

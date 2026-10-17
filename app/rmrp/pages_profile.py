@@ -1,4 +1,5 @@
 """Профиль, история, настройки, Discord Rich Presence, оверлей."""
+import json
 import time
 import tkinter as tk
 from tkinter import ttk
@@ -7,7 +8,8 @@ from . import textutil as T
 from . import ui
 from .api import ApiError
 from .config import (ACCENT, ACCENT_TXT, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BORDER, FONT, MUTED, ORANGE, PANEL, PANEL2, PURPLE, SUCCESS,
-                     TEAL, TEXT, TEXT2, WARNING, role_color, role_label)
+                     TEAL, TEXT, TEXT2, WARNING, ROLE_COLOR_OVERRIDES, ROLE_INFO, ROLE_ORDER, default_role_color, role_color, role_label,
+                     set_role_colors)
 
 DISCORD_STATUSES = ["Изучает законы на RMRP — Помощник", "Готовится к тесту по законам RMRP", "Ищет статью в кодексе", "Читает законодательство RMRP"]
 HOTKEYS = ["F9", "F10", "F11", "F12", "INSERT", "HOME"]
@@ -179,6 +181,12 @@ class ProfilePages:
                     after()
             ui.Switch(r, bool(s.get(key)), toggle).pack(side="right")
 
+        if not self.guest:
+            ac = section("Аккаунт на этом компьютере", "Автоматический вход без пароля. Сохранённый вход зашифрован средствами Windows и работает только на этом компьютере и под вашей учётной записью Windows.")
+            switch_row(ac, "Входить автоматически при запуске", "remember", self.persist_session)
+            ui.RButton(ac, "Забыть вход на этом компьютере", lambda: (self.forget_session(), self.notify("Автовход", "Сохранённый вход удалён. При следующем запуске нужно будет ввести пароль.", "success")),
+                       "secondary", height=32, size=9).pack(anchor="w", pady=(6, 0))
+
         snd = section("Звук интерфейса", "Тихие клики и сигналы. Работает на Windows.")
         switch_row(snd, "Звуки нажатия", "sound_enabled")
         switch_row(snd, "Звук при наведении", "hover_sound")
@@ -225,6 +233,51 @@ class ProfilePages:
             ui.Switch(r, allow, toggle_pr).pack(side="right")
 
         if self.role() == "FOUNDER":
+            rc = section("Цвета ролей", "Цвет имени и роли у пользователей, в профиле, памятках и в блоке «Команда». Применяется у всех после сохранения.")
+            draft = dict(ROLE_COLOR_OVERRIDES)
+            swatches = {}
+
+            def current(role):
+                return draft.get(role) or default_role_color(role)
+
+            def repaint(role):
+                name_l, sw = swatches[role]
+                name_l.configure(fg=current(role))
+                sw.configure(bg=current(role))
+
+            def pick(role):
+                from tkinter import colorchooser
+                res = colorchooser.askcolor(color=current(role), parent=self, title=f"Цвет: {ROLE_INFO[role][1]}")
+                if res and res[1]:
+                    draft[role] = res[1].lower()
+                    repaint(role)
+
+            def reset(role):
+                draft.pop(role, None)
+                repaint(role)
+            for role in ROLE_ORDER:
+                r = tk.Frame(rc, bg=PANEL)
+                r.pack(fill="x", pady=4)
+                name_l = ui.lbl(r, role_label(role), 11, True, current(role), width=26)
+                name_l.pack(side="left")
+                sw = tk.Label(r, text="      ", bg=current(role), bd=0)
+                sw.pack(side="left", padx=(6, 12))
+                swatches[role] = (name_l, sw)
+                ui.RButton(r, "Выбрать цвет", lambda ro=role: pick(ro), "secondary", height=28, size=8).pack(side="left")
+                ui.RButton(r, "Сбросить", lambda ro=role: reset(ro), "secondary", height=28, size=8).pack(side="left", padx=6)
+
+            def save_colors():
+                value = json.dumps({k: v for k, v in draft.items() if k in ROLE_INFO})
+
+                def done(_):
+                    set_role_colors(draft)
+                    self._build_chip()
+                    self.log_action("Изменены цвета ролей", "app_settings", "role_colors")
+                    self.notify("Цвета ролей", "Сохранено для всех пользователей.", "success")
+                self.bg(lambda: self.db.insert("app_settings", {"key": "role_colors", "value": value}, upsert_on="key"), done,
+                        lambda e: self.notify("Цвета ролей", str(e), "error"), bound=False)
+            ui.RButton(rc, "Сохранить для всех", save_colors, "primary", height=34, size=9).pack(anchor="e", pady=(8, 0))
+
             fd = section("Для Основателя", "Общий Discord Application ID для всех пользователей (хранится в app_settings).")
             f = ui.Field(fd, "Application ID из discord.com/developers", outer=PANEL, height=38)
             f.pack(fill="x")

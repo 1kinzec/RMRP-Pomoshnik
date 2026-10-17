@@ -29,6 +29,14 @@
 
 Затем в приложении: **Админ-панель → Законодательство → Синхронизировать RMRP** (загрузит статьи вместе с главами). Другие законы добавляются кнопкой «Добавить закон» со ссылкой на тему форума — они синхронизируются вместе с остальными.
 
+## Что нового в 2.5
+
+Выполните **`migration_v2_5.sql`** (Supabase → SQL Editor, после `migration_v2_3.sql`; скрипт можно запускать повторно). Он создаёт таблицу памяток, публичное хранилище `memo-images` для фото, функции `memos_feed` и `app_team` и общую настройку цветов ролей.
+
+- **Автовход:** токен сессии лежит в `%APPDATA%\RMRP-Pomoshnik\session.dat` (шифрован DPAPI, привязан к компьютеру и пользователю Windows). Удалить файл = забыть вход.
+- **Памятки:** кто публикует, задаёт функция `can_publish_memos()` в SQL (по умолчанию FOUNDER и ADMIN; добавьте `'MODERATOR'`, если нужно и модераторам).
+- **Цвета ролей:** Настройки → «Цвета ролей» (только Основатель), хранятся в `app_settings.role_colors`.
+
 ## Discord Rich Presence
 
 1. https://discord.com/developers/applications → New Application → «RMRP Помощник».
@@ -61,7 +69,8 @@ Publishable key в клиенте — намеренно. **Secret/service_role 
 
 ```
 app/RMRP_Pomoshnik.pyw      точка входа
-app/rmrp/                   config, api, ui (виджеты), app (окно), pages_*.py, overlay, discord_rpc, hotkey, textutil
+app/rmrp/                   config, api, ui (виджеты), app (окно), pages_*.py (в т.ч. pages_memos), overlay, discord_rpc, hotkey, textutil,
+                            session_store (автовход), memo_util (теги, фильтр, сжатие фото)
 tests/                      юнит-тесты и дымовой тест интерфейса
 migration_v2.sql            миграция БД 2.0
 migration_v2_2.sql          права на удаление и правку (2.3)

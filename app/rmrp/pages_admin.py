@@ -7,7 +7,7 @@ from . import textutil as T
 from . import ui
 from .api import ApiError
 from .config import (ACCENT, ACCENT_TXT, APP_NAME, BG, BORDER, DANGER, DIFFICULTY_RU, FONT, MUTED, ONLINE_WINDOW_SEC, ORANGE, PANEL, PANEL2, PURPLE,
-                     ROLE_ORDER, ROLE_SHORT, STATUS_RU, STATUS_VALUES, SUCCESS, TEAL, TEXT, TEXT2, WARNING, role_label)
+                     ROLE_ORDER, ROLE_SHORT, STATUS_RU, STATUS_VALUES, SUCCESS, TEAL, TEXT, TEXT2, WARNING, role_color, role_label)
 
 REPORT_STATUS = {"NEW": "Новая", "IN_PROGRESS": "В работе", "RESOLVED": "Решена", "REJECTED": "Отклонена"}
 ADMIN_TILES = [
@@ -176,6 +176,8 @@ class AdminPages:
         for c, t, w in [("id", "ID", 90), ("name", "Имя", 200), ("role", "Роль", 150), ("status", "Статус", 130), ("premium", "Premium", 80)]:
             tree.heading(c, text=t)
             tree.column(c, width=w, anchor="w")
+        for _r in ROLE_ORDER:
+            tree.tag_configure(f"role_{_r}", foreground=role_color(_r))
         tree.tag_configure("online", foreground=SUCCESS)
         tree.tag_configure("banned", foreground=DANGER)
         tree.grid(row=1, column=0, sticky="nsew")
@@ -203,7 +205,7 @@ class AdminPages:
             rows = T.filter_users(list(state["rows"].values()), q, role_opts[max(role_cb.current(), 0)][0], st_code, st_online, ONLINE_WINDOW_SEC)
             for r in rows:
                 online = T.is_online(r.get("last_seen_at"), ONLINE_WINDOW_SEC)
-                tags = ("online",) if online else ()
+                tags = (f"role_{r.get('role')}",)  # имя роли и строка красятся цветом роли; статус виден в колонке
                 if r.get("status") != "ACTIVE":
                     tags = ("banned",)
                 status = ("● Online" if online else "○ Offline") if r.get("status") == "ACTIVE" else STATUS_RU.get(r["status"], r["status"])
@@ -232,7 +234,7 @@ class AdminPages:
             online = T.is_online(u.get("last_seen_at"), ONLINE_WINDOW_SEC)
             ui.Avatar(info, u.get("display_name") or u.get("username"), 64, u.get("avatar_url") or "", online=online).pack(anchor="w")
             ui.lbl(info, u.get("display_name") or u.get("username"), 13, True).pack(anchor="w", pady=(8, 0))
-            ui.lbl(info, f"@{u.get('username')}  •  {role_label(u['role'])}", 9, False, TEXT2).pack(anchor="w")
+            ui.lbl(info, f"@{u.get('username')}  •  {role_label(u['role'])}", 9, True, role_color(u["role"])).pack(anchor="w")
             ui.lbl(info, f"Статус: {STATUS_RU.get(u['status'], u['status'])}  •  Premium: {'да' if u.get('premium') else 'нет'}", 9, False, MUTED).pack(anchor="w", pady=(4, 0))
             ui.lbl(info, f"Регистрация: {T.fmt_date(u.get('created_at'))}\nПоследний вход: {T.fmt_date(u.get('last_login'), True)}\nРозыгрыши: {'разрешены' if u.get('allow_pranks') else 'запрещены'}",
                    8, False, MUTED).pack(anchor="w", pady=(6, 10))
@@ -315,7 +317,7 @@ class AdminPages:
         for role, text in rows:
             c = ui.Card(body, radius=12, pad=14)
             c.pack(fill="x", pady=4)
-            ui.lbl(c.body, role_label(role), 11, True).pack(anchor="w")
+            ui.lbl(c.body, role_label(role), 11, True, role_color(role)).pack(anchor="w")
             ui.lbl(c.body, text, 9, False, TEXT2, wraplength=900).pack(anchor="w", pady=(3, 0))
         ui.lbl(body, "Права проверяются на сервере (RLS Supabase): клиент не может обойти иерархию ролей.", 9, False, MUTED).pack(anchor="w", pady=10)
 

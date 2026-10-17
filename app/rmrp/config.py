@@ -1,5 +1,7 @@
 """Константы, цвета, роли и источники законов."""
+import json
 import os
+import re
 
 APP_NAME = "RMRP Помощник"
 try:
@@ -65,7 +67,7 @@ ROLE_INFO = {
     "FOUNDER": ("👑", "Основатель", "#f5c542"),
     "ADMIN": ("🛡", "Администратор", "#ff6b6b"),
     "MODERATOR": ("🔨", "Модератор", "#a78bfa"),
-    "PREMIUM": ("⭐", "Премиум пользователь", "#fbbf24"),
+    "PREMIUM": ("⭐", "Премиум пользователь", "#38bdf8"),
     "USER": ("👤", "Пользователь", "#8ea3bb"),
 }
 ROLE_ORDER = ["FOUNDER", "ADMIN", "MODERATOR", "PREMIUM", "USER"]
@@ -85,8 +87,39 @@ def role_label(role):
     return f"{icon} {name}"
 
 
+# Цвета ролей, заданные Основателем (хранятся в app_settings.role_colors, общие для всех).
+ROLE_COLOR_OVERRIDES = {}
+_HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
 def role_color(role):
+    return ROLE_COLOR_OVERRIDES.get(role) or ROLE_INFO.get(role, ROLE_INFO["USER"])[2]
+
+
+def default_role_color(role):
     return ROLE_INFO.get(role, ROLE_INFO["USER"])[2]
+
+
+def parse_role_colors(text):
+    """JSON {"ADMIN": "#ff0000"} -> только корректные роли и цвета #rrggbb."""
+    try:
+        data = json.loads(text) if isinstance(text, str) else dict(text or {})
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {r: str(c).lower() for r, c in data.items() if r in ROLE_INFO and isinstance(c, str) and _HEX.match(c)}
+
+
+def set_role_colors(colors):
+    ROLE_COLOR_OVERRIDES.clear()
+    ROLE_COLOR_OVERRIDES.update(parse_role_colors(colors))
+
+
+# ---- Краткие памятки ----
+MEMO_BUCKET = "memo-images"
+MEMO_TAGS = [("Важно", "#ef4444"), ("Полиция", "#3b82f6"), ("Суд", "#8b5cf6"), ("Процесс", "#14b8a6"), ("Закон", "#2f7bf5"),
+             ("Штрафы", "#f59e0b"), ("Задержание", "#ec4899"), ("Правила", "#22c55e"), ("Инструкция", "#06b6d4"), ("Новости", "#a3e635")]
 
 
 def settings_dir():

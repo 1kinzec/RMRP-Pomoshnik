@@ -3,8 +3,9 @@ import tkinter as tk
 from datetime import datetime, timezone
 
 from . import ui
-from .config import ACCENT, BORDER, FONT, MUTED, ORANGE, PANEL, PURPLE, SUCCESS, TEAL, TEXT, TEXT2, WARNING, ACCENT_TXT
-from .textutil import fmt_date, parse_ts, plural
+from .config import (ACCENT, BORDER, FONT, MUTED, ONLINE_WINDOW_SEC, ORANGE, PANEL, PANEL2, PURPLE, ROLE_ORDER, SUCCESS, TEAL, TEXT, TEXT2, WARNING,
+                     ACCENT_TXT, role_color, role_label)
+from .textutil import fmt_date, is_online, parse_ts, plural
 
 ANN_COLORS = {"INFO": ACCENT, "UPDATE": SUCCESS, "WARNING": WARNING, "IMPORTANT": "#ef4444"}
 
@@ -48,9 +49,15 @@ class HomePages:
         self._home_ann.pack(fill="x")
         self.loading(self._home_recent)
         self.loading(self._home_ann)
+        self._home_team = ui.Card(wrap, radius=14, pad=18)
+        self._home_team.pack(fill="x", pady=(14, 0))
+        ui.lbl(self._home_team.body, "Команда приложения", 13, True).pack(anchor="w")
+        ui.lbl(self._home_team.body, "Основатель, администраторы и модераторы RMRP Помощник.", 9, False, MUTED).pack(anchor="w", pady=(2, 10))
+        self._home_team_grid = tk.Frame(self._home_team.body, bg=PANEL)
+        self._home_team_grid.pack(fill="x")
 
         def work():
-            out = {"laws": None, "recent": [], "ann": []}
+            out = {"laws": None, "recent": [], "ann": [], "team": []}
             try:
                 out["laws"] = len(self.db.table("laws", "id", {"is_active": "eq.true"}))
             except Exception:  # noqa: BLE001
@@ -66,6 +73,10 @@ class HomePages:
                 out["ann"] = self.db.table("announcements", "id,title,content,type,created_at,expires_at", {"is_active": "eq.true"}, "created_at.desc", 6)
             except Exception:  # noqa: BLE001
                 pass
+            try:
+                out["team"] = self.db.rpc("app_team")
+            except Exception:  # noqa: BLE001
+                pass  # миграция 2.5 ещё не выполнена — блок просто скрывается
             return out
 
         def done(d):
@@ -74,7 +85,35 @@ class HomePages:
                 self._home_tiles["laws"].configure(text=f"{n} {plural(n, 'закон', 'закона', 'законов')} RMRP")
             self._render_recent(d["recent"])
             self._render_ann(d["ann"])
+            self._render_team(d["team"])
         self.bg(work, done)
+
+    def _render_team(self, rows):
+        rows = [r for r in (rows if isinstance(rows, list) else []) if isinstance(r, dict)]
+        if not rows:
+            self._home_team.destroy()
+            return
+        rank = {r: i for i, r in enumerate(ROLE_ORDER)}
+        rows.sort(key=lambda r: (rank.get(r.get("role"), 99), (r.get("display_name") or r.get("username") or "").lower()))
+        grid = self._home_team_grid
+        for c in grid.winfo_children():
+            c.destroy()
+        cols = 3
+        for i in range(cols):
+            grid.grid_columnconfigure(i, weight=1, uniform="team")
+        for i, r in enumerate(rows):
+            role = r.get("role") or "USER"
+            color = role_color(role)
+            name = r.get("display_name") or r.get("username") or "—"
+            cell = tk.Frame(grid, bg=PANEL2, highlightbackground=ui.mix(PANEL2, color, .45), highlightthickness=1)
+            cell.grid(row=i // cols, column=i % cols, sticky="nsew", padx=4, pady=4)
+            inner = tk.Frame(cell, bg=PANEL2)
+            inner.pack(fill="x", padx=12, pady=10)
+            ui.Avatar(inner, name, 44, r.get("avatar_url") or "", online=is_online(r.get("last_seen_at"), ONLINE_WINDOW_SEC), ring=color, bg=PANEL2).pack(side="left")
+            col = tk.Frame(inner, bg=PANEL2)
+            col.pack(side="left", padx=10)
+            ui.lbl(col, name, 11, True, color, bg=PANEL2).pack(anchor="w")
+            ui.lbl(col, role_label(role), 9, False, TEXT2, bg=PANEL2).pack(anchor="w")
 
     def _render_recent(self, rows):
         box = self._home_recent

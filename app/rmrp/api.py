@@ -30,6 +30,7 @@ class Supabase:
         self.access_token = None
         self.refresh_token = None
         self.user = {}
+        self.on_tokens = None  # callback(refresh_token|None): сохранить/сбросить сессию
         self._lock = threading.Lock()
 
     @property
@@ -38,16 +39,21 @@ class Supabase:
 
     # ------------------------------------------------------------------ низкий уровень
     def request(self, path, method="GET", body=None, headers=None, _retry=True):
-        h = {"apikey": SUPABASE_KEY, "Content-Type": "application/json"}
-        h["Authorization"] = f"Bearer {self.access_token or SUPABASE_KEY}"
+        h = {"Content-Type": "application/json"}
         if headers:
             h.update(headers)
         data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
+        raw = self._send(path, method, data, h, _retry)
+        return json.loads(raw) if raw else {}
+
+    def _send(self, path, method, data, headers, _retry=True, timeout=25):
+        """Один HTTP-вызов к Supabase с авторизацией и однократным обновлением токена. Возвращает текст ответа."""
+        h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {self.access_token or SUPABASE_KEY}"}
+        h.update(headers or {})
         req = urllib.request.Request(SUPABASE_URL + path, data=data, headers=h, method=method)
         try:
-            with urllib.request.urlopen(req, timeout=25) as response:
-                raw = response.read().decode("utf-8")
-                return json.loads(raw) if raw else {}
+            with urllib.request.urlopen(req, timeout=timeout) as response:
+                return response.read().decode("utf-8")
         except urllib.error.HTTPError as e:
             raw = e.read().decode("utf-8", errors="replace")
             try:
@@ -60,12 +66,21 @@ class Supabase:
                 msg = str(detail)
             if _retry and self.refresh_token and e.code in (401, 403) and "jwt" in str(msg).lower():
                 if self._refresh():
-                    return self.request(path, method, body, headers, _retry=False)
+                    h2 = dict(headers or {})
+                    h2.pop("Authorization", None)
+                    return self._send(path, method, data, h2, _retry=False, timeout=timeout)
             raise ApiError(msg or f"HTTP {e.code}", e.code)
         except urllib.error.URLError as e:
             raise ApiError(f"Нет соединения с сервером: {e.reason}")
         except Exception as e:  # noqa: BLE001
             raise ApiError(f"Ошибка соединения: {e}")
+
+    def _tokens_changed(self):
+        if self.on_tokens:
+            try:
+                self.on_tokens(self.refresh_token)
+            except Exception:  # noqa: BLE001
+                pass
 
     def _refresh(self):
         with self._lock:
@@ -74,6 +89,7 @@ class Supabase:
                                     {"refresh_token": self.refresh_token}, _retry=False)
                 self.access_token = data.get("access_token")
                 self.refresh_token = data.get("refresh_token") or self.refresh_token
+                self._tokens_changed()
                 return bool(self.access_token)
             except ApiError:
                 return False
@@ -84,6 +100,17 @@ class Supabase:
         self.access_token = data.get("access_token")
         self.refresh_token = data.get("refresh_token")
         self.user = data.get("user") or {}
+        self._tokens_changed()
+        return data
+
+    def restore_session(self, refresh_token):
+        """Автовход: обменивает сохранённый refresh-токен на новую сессию (токен при этом ротируется)."""
+        self.access_token = None
+        data = self.request("/auth/v1/token?grant_type=refresh_token", "POST", {"refresh_token": refresh_token}, _retry=False)
+        self.access_token = data.get("access_token")
+        self.refresh_token = data.get("refresh_token") or refresh_token
+        self.user = data.get("user") or {}
+        self._tokens_changed()
         return data
 
     def auth_register(self, email, password, username, display_name):
@@ -104,6 +131,23 @@ class Supabase:
         self.access_token = None
         self.refresh_token = None
         self.user = {}
+        self._tokens_changed()
+
+    # ------------------------------------------------------------------ Storage
+    def public_url(self, bucket, path):
+        return f"{SUPABASE_URL}/storage/v1/object/public/{bucket}/{urllib.parse.quote(path, safe='/')}"
+
+    def upload_object(self, bucket, path, data, content_type):
+        """Загружает файл в Storage (нужен вход; права задаёт RLS на storage.objects)."""
+        self._send(f"/storage/v1/object/{bucket}/{urllib.parse.quote(path, safe='/')}", "POST", data,
+                   {"Content-Type": content_type, "x-upsert": "false", "cache-control": "max-age=31536000"}, timeout=90)
+        return self.public_url(bucket, path)
+
+    def delete_objects(self, bucket, paths):
+        if not paths:
+            return
+        body = json.dumps({"prefixes": list(paths)}).encode("utf-8")
+        self._send(f"/storage/v1/object/{bucket}", "DELETE", body, {"Content-Type": "application/json"})
 
     # ------------------------------------------------------------------ PostgREST
     def table(self, table, select="*", filters=None, order=None, limit=None, offset=None):

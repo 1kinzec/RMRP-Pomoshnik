@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from . import ui
 from .api import ApiError, Supabase
 from .config import (ACCENT, ACCENT_HI, ACCENT_TXT, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BG2, BORDER, FONT, HEARTBEAT_SEC, MUTED,
-                     PANEL, PANEL2, ROLE_ORDER, SIDEBAR, TEXT, TEXT2, PURPLE, role_color, role_label, settings_dir)
+                     PANEL, PANEL2, ROLE_COLOR_OVERRIDES, ROLE_ORDER, SIDEBAR, TEXT, TEXT2, PURPLE, parse_role_colors, role_color, role_label, set_role_colors,
+                     settings_dir)
 from .discord_rpc import DiscordRPC, build_activity
 from .hotkey import GlobalHotkey
 from .overlay import Overlay
@@ -22,6 +23,7 @@ from .pages_ai import AiPages
 from .pages_auth import AuthPages
 from .pages_home import HomePages
 from .pages_laws import LawPages
+from .pages_memos import MemoPages
 from .pages_profile import ProfilePages
 from .pages_tests import TestPages
 from .pages_update import UpdatePages
@@ -44,6 +46,7 @@ NAV_MAIN = [
     ("laws", "▤", "Законодательство"),
     ("search", "⌕", "Поиск"),
     ("ai", "✦", "Нейросеть (ИИ)"),
+    ("memos", "✎", "Краткие памятки"),
     ("tests", "✓", "Проверь себя"),
     ("favorites", "★", "Избранное"),
     ("history", "◷", "История"),
@@ -51,12 +54,12 @@ NAV_MAIN = [
     ("profile", "♙", "Профиль"),
 ]
 GUEST_HIDDEN = {"favorites", "history", "reports", "profile"}
-PAGE_TITLES = {"home": "Главная", "laws": "Законодательство", "law": "Законодательство", "search": "Поиск", "ai": "Нейросеть (ИИ)",
+PAGE_TITLES = {"home": "Главная", "laws": "Законодательство", "law": "Законодательство", "search": "Поиск", "ai": "Нейросеть (ИИ)", "memos": "Краткие памятки",
                "tests": "Проверь себя", "favorites": "Избранное", "history": "История", "reports": "Жалобы", "profile": "Профиль",
                "settings": "Настройки", "admin": "Админ-панель"}
 
 
-class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, ProfilePages, UpdatePages, tk.Tk):
+class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPages, ProfilePages, UpdatePages, tk.Tk):
     def __init__(self):
         tk.Tk.__init__(self)
         self.title(f"{APP_NAME} v{APP_VERSION} — by {APP_PUBLISHER}")
@@ -73,6 +76,10 @@ class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, Profil
         ui.setup_styles(self)
 
         self.db = Supabase()
+        self.db.on_tokens = self._on_tokens
+        self.session_path = os.path.join(settings_dir(), "session.dat")
+        self._autologin_cancelled = False
+        self._auth_busy = False
         self.user = {}
         self.prof = {}
         self.guest = False
@@ -100,7 +107,8 @@ class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, Profil
         self.apply_overlay_settings()
 
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-        self.show_login()
+        if not self.try_autologin():
+            self.show_login()
         self.after(HEARTBEAT_SEC * 1000, self._heartbeat)
         self.schedule_update_checks()
 
@@ -276,6 +284,23 @@ class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, Profil
         self.content = tk.Frame(right, bg=BG)
         self.content.pack(fill="both", expand=True, padx=28, pady=(6, 20))
         self.navigate("home")
+        self.refresh_role_colors()
+
+    def refresh_role_colors(self):
+        """Подтягивает общие цвета ролей (их задаёт Основатель) и перекрашивает интерфейс, если они изменились."""
+        def work():
+            rows = self.db.table("app_settings", "value", {"key": "eq.role_colors"}, limit=1)
+            return parse_role_colors(rows[0].get("value") or "{}") if rows else {}
+
+        def done(colors):
+            if colors == ROLE_COLOR_OVERRIDES:
+                return
+            set_role_colors(colors)
+            if self.chip_holder is not None:
+                self._build_chip()
+            if self.page in ("home", "memos", "profile") and self.content is not None:
+                self.navigate(self.page, **self.page_args)
+        self.bg(work, done, fail=lambda e: None, bound=False)
 
     def _nav_item(self, parent, key, glyph, title, color=None):
         cmd = self.logout if key == "__logout" else (lambda k=key: self.navigate(k))
@@ -366,7 +391,8 @@ class App(AuthPages, HomePages, LawPages, AiPages, TestPages, AdminPages, Profil
         self.after(HEARTBEAT_SEC * 1000, self._heartbeat)
 
     def logout(self):
-        self.db.auth_logout()
+        self.db.auth_logout()  # заодно сбрасывает сохранённый вход на этом компьютере
+        self.forget_session()
         self.user, self.prof, self.guest = {}, {}, False
         self._prank_started = False
         self.rpc.configure("", False)

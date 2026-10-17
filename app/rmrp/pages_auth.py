@@ -3,14 +3,117 @@ import re
 import tkinter as tk
 from datetime import datetime, timezone
 
-from . import ui
+from . import session_store, ui
+from .api import ApiError
 from .config import ACCENT_HI, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BG2, FONT, MUTED, PANEL2, TEXT, TEXT2, ACCENT_TXT, STATUS_RU
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 USERNAME_RE = re.compile(r"^[A-Za-zА-Яа-яЁё0-9_.-]{3,32}$")
 
 
+class AccountError(RuntimeError):
+    """Аккаунт нельзя использовать (нет профиля, заблокирован): сохранённый вход нужно сбросить."""
+
+
 class AuthPages:
+    # ------------------------------------------------------------------ сессия на этом компьютере
+    def persist_session(self):
+        """Сохраняет (или сбрасывает) вход для этого компьютера согласно настройке «Запомнить меня»."""
+        rt = self.db.refresh_token
+        if self.settings.get("remember", True) and rt and not self.guest:
+            session_store.save(self.session_path, {"refresh_token": rt, "user_id": self.user.get("id") or self.db.user.get("id")})
+        else:
+            session_store.clear(self.session_path)
+
+    def _on_tokens(self, refresh_token):
+        """Вызывается клиентом API при каждой смене токена (вход, ротация, выход)."""
+        if not refresh_token:
+            session_store.clear(self.session_path)
+        elif self.settings.get("remember", True) and not self.guest:
+            session_store.save(self.session_path, {"refresh_token": refresh_token, "user_id": self.db.user.get("id") or self.user.get("id")})
+
+    def forget_session(self):
+        session_store.clear(self.session_path)
+
+    def try_autologin(self):
+        """Если на этом компьютере есть сохранённый вход — входит без пароля. Возвращает True, если вход запущен."""
+        if not self.settings.get("remember", True):
+            session_store.clear(self.session_path)
+            return False
+        saved = session_store.load(self.session_path)
+        if not saved:
+            return False
+        self.clear_root()
+        splash = tk.Frame(self, bg=BG)
+        splash.pack(fill="both", expand=True)
+        box = tk.Frame(splash, bg=BG)
+        box.place(relx=.5, rely=.5, anchor="center")
+        logo = ui.load_image("rmrp.png", (120, 120))
+        if logo:
+            tk.Label(box, image=logo, bg=BG, bd=0).pack()
+        ui.lbl(box, "RMRP Помощник", 20, True).pack(pady=(10, 2))
+        ui.lbl(box, "Входим в аккаунт…", 10, False, MUTED).pack()
+        link = tk.Label(box, text="Войти под другим аккаунтом", font=(FONT, 9), fg=ACCENT_TXT, bg=BG, cursor="hand2")
+        link.pack(pady=(18, 0))
+        self._autologin_cancelled = False
+
+        def cancel(_e=None):
+            self._autologin_cancelled = True
+            self.forget_session()
+            self.show_login()
+        link.bind("<Button-1>", cancel)
+
+        def work():
+            self.db.restore_session(saved["refresh_token"])
+            user = self.db.user
+            if not user.get("id"):
+                raise AccountError("Сессия недействительна.")
+            return self._load_account(user)
+
+        def done(res):
+            if self._autologin_cancelled:
+                self.db.auth_logout()
+                return
+            self.user, self.prof = res
+            self.guest = False
+            self.persist_session()  # сохраняем ротированный токен
+            self.show_main()
+            self.start_session()
+
+        def fail(e):
+            if self._autologin_cancelled:
+                return
+            offline = isinstance(e, ApiError) and e.status == 0
+            if not offline:
+                self.forget_session()  # токен отозван/просрочен или аккаунт закрыт — просим войти заново
+            self.show_login()
+            if offline:
+                self.notify("Нет соединения", "Не удалось войти автоматически. Проверьте интернет и перезапустите приложение.", "warning", 6000)
+            else:
+                self.notify("Войдите снова", self._friendly(e) if isinstance(e, AccountError) else "Сохранённый вход больше не действителен.", "info", 5000)
+        self.bg(work, done, fail, bound=False)
+        return True
+
+    def _load_account(self, user):
+        """Профиль + проверка статуса (выполняется в фоновом потоке). Возвращает (user, profile)."""
+        rows = self.db.table("profiles", "*", {"id": f"eq.{user['id']}"})
+        if not rows:
+            self.db.auth_logout()
+            raise AccountError("Профиль пользователя не найден. Проверьте SQL-триггер profiles.")
+        prof = rows[0]
+        if prof.get("status") != "ACTIVE":
+            self.db.auth_logout()
+            raise AccountError(f"Доступ закрыт. Статус аккаунта: {STATUS_RU.get(prof.get('status'), prof.get('status'))}.")
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            self.db.update("profiles", {"id": f"eq.{user['id']}"}, {"last_login": now, "last_seen_at": now})
+        except Exception:  # noqa: BLE001
+            try:
+                self.db.update("profiles", {"id": f"eq.{user['id']}"}, {"last_login": now})
+            except Exception:  # noqa: BLE001
+                pass
+        return user, prof
+
     # ------------------------------------------------------------------ каркас
     def show_login(self, tab="login", prefill=""):
         self.clear_root()
@@ -79,7 +182,7 @@ class AuthPages:
         else:
             self.f_login.focus_entry()
         self.v_remember = tk.BooleanVar(value=bool(self.settings.get("remember", True)))
-        tk.Checkbutton(f, text="Запомнить меня", variable=self.v_remember, bg=BG, fg=TEXT2, selectcolor=PANEL2, activebackground=BG,
+        tk.Checkbutton(f, text="Запомнить меня на этом компьютере (автовход)", variable=self.v_remember, bg=BG, fg=TEXT2, selectcolor=PANEL2, activebackground=BG,
                        activeforeground=TEXT, font=(FONT, 9), bd=0, highlightthickness=0, cursor="hand2").pack(anchor="w", pady=(12, 14))
         self.btn_login = ui.RButton(f, "Войти", self.do_login, height=42, size=11)
         self.btn_login.pack(fill="x")
@@ -118,23 +221,7 @@ class AuthPages:
             user = data.get("user") or {}
             if not self.db.access_token or not user.get("id"):
                 raise RuntimeError("Сервер не вернул активную сессию.")
-            rows = self.db.table("profiles", "*", {"id": f"eq.{user['id']}"})
-            if not rows:
-                self.db.auth_logout()
-                raise RuntimeError("Профиль пользователя не найден. Проверьте SQL-триггер profiles.")
-            prof = rows[0]
-            if prof.get("status") != "ACTIVE":
-                self.db.auth_logout()
-                raise RuntimeError(f"Доступ закрыт. Статус аккаунта: {STATUS_RU.get(prof.get('status'), prof.get('status'))}.")
-            now = datetime.now(timezone.utc).isoformat()
-            try:
-                self.db.update("profiles", {"id": f"eq.{user['id']}"}, {"last_login": now, "last_seen_at": now})
-            except Exception:  # noqa: BLE001
-                try:
-                    self.db.update("profiles", {"id": f"eq.{user['id']}"}, {"last_login": now})
-                except Exception:  # noqa: BLE001
-                    pass
-            return user, prof
+            return self._load_account(user)
 
         def done(res):
             self._auth_busy = False
@@ -143,6 +230,7 @@ class AuthPages:
             self.settings["remember"] = bool(self.v_remember.get())
             self.settings["last_login"] = ident if self.settings["remember"] else ""
             self.save_settings()
+            self.persist_session()
             self.show_main()
             self.start_session()
 

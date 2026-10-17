@@ -132,13 +132,21 @@ for n in ("Style", "Treeview", "Combobox", "Scrollbar", "Progressbar", "Notebook
     setattr(ttk, n, type(n, (W,), {}))
 fnt = types.ModuleType("tkinter.font")
 fnt.Font = Font
-tk.ttk, tk.font = ttk, fnt
-sys.modules.update({"tkinter": tk, "tkinter.ttk": ttk, "tkinter.font": fnt})
+fdlg = types.ModuleType("tkinter.filedialog")
+fdlg.askopenfilenames = lambda *a, **k: ()
+ccol = types.ModuleType("tkinter.colorchooser")
+ccol.askcolor = lambda *a, **k: ((1, 2, 3), "#AABBCC")
+tk.ttk, tk.font, tk.filedialog, tk.colorchooser = ttk, fnt, fdlg, ccol
+sys.modules.update({"tkinter": tk, "tkinter.ttk": ttk, "tkinter.font": fnt, "tkinter.filedialog": fdlg, "tkinter.colorchooser": ccol})
 
 
 # ----------------------------------------------------------------------------- фейковая БД
 class FakeDB:
     access_token = "t"
+    refresh_token = "r"
+    on_tokens = None
+    user = {}
+    restore_error = None
 
     def __init__(self):
         self.calls = []
@@ -166,6 +174,14 @@ class FakeDB:
             "app_settings": [], "law_versions": [{"version": "1", "change_description": "d", "created_at": "2026-01-01T00:00:00+00:00"}],
             "test_favorites": [], "prank_events": [],
         }
+        self.memos = [{"id": "m1", "title": "Задержание", "content": "Права " * 120, "tags": ["Полиция", "Важно"], "images": ["u1/a.jpg", "u1/b.png"], "pinned": True,
+                       "created_at": "2026-02-01T10:00:00+00:00", "updated_at": "2026-02-02T10:00:00+00:00", "author_id": "u1", "author_name": "Kinzec",
+                       "author_role": "FOUNDER", "author_avatar": None},
+                      {"id": "m2", "title": "Штрафы", "content": "Кратко", "tags": [], "images": [], "pinned": False, "created_at": "2026-01-01T10:00:00+00:00",
+                       "updated_at": "2026-01-01T10:00:00+00:00", "author_id": None, "author_name": None, "author_role": None, "author_avatar": None}]
+        self.team = [{"id": "u2", "username": "mod", "display_name": "Moder", "avatar_url": None, "role": "MODERATOR", "last_seen_at": None},
+                     {"id": "u1", "username": "kinzec", "display_name": "Kinzec", "avatar_url": None, "role": "FOUNDER", "last_seen_at": "2026-10-10T00:00:00+00:00"}]
+        self.uploaded, self.deleted_objects = [], []
 
     def table(self, name, select="*", filters=None, order=None, limit=None, offset=None):
         self.calls.append(("table", name, filters))
@@ -194,7 +210,27 @@ class FakeDB:
         return [{"id": 1}]
 
     def rpc(self, fn, payload=None):
-        return "a@b.c"
+        self.calls.append(("rpc", fn, payload))
+        return {"memos_feed": lambda: self.memos, "app_team": lambda: self.team}.get(fn, lambda: "a@b.c")()
+
+    def public_url(self, bucket, path):
+        return f"https://x/storage/v1/object/public/{bucket}/{path}"
+
+    def upload_object(self, bucket, path, data, content_type):
+        self.uploaded.append((bucket, path, len(data), content_type))
+        return self.public_url(bucket, path)
+
+    def delete_objects(self, bucket, paths):
+        self.deleted_objects.extend(paths)
+
+    def restore_session(self, token):
+        if self.restore_error:
+            raise self.restore_error
+        self.user = {"id": "u1"}
+        self.refresh_token = "r2"
+        if self.on_tokens:
+            self.on_tokens("r2")
+        return {}
 
     def auth_logout(self):
         pass
@@ -229,7 +265,7 @@ def main():
     app.guest = False
     app.show_main()
     pages = [("home", {}), ("laws", {}), ("law", {"law_id": 1}), ("law", {"law_id": 1, "article_id": 11, "highlight": ["оскорблен"]}), ("search", {}), ("search", {"q": "статья 12"}),
-             ("ai", {}), ("ai", {"preset": "Что грозит за оскорбление?"}), ("tests", {}), ("favorites", {}), ("history", {}), ("reports", {}), ("profile", {}), ("settings", {}),
+             ("memos", {}), ("ai", {}), ("ai", {"preset": "Что грозит за оскорбление?"}), ("tests", {}), ("favorites", {}), ("history", {}), ("reports", {}), ("profile", {}), ("settings", {}),
              ("admin", {}), ("admin", {"section": "users"}), ("admin", {"section": "roles"}), ("admin", {"section": "reports"}), ("admin", {"section": "tests"}),
              ("admin", {"section": "laws"}), ("admin", {"section": "ann"}), ("admin", {"section": "audit"}), ("admin", {"section": "screamer"})]
     for key, kw in pages:
@@ -303,14 +339,94 @@ def main():
     app.update_dialog(updater.check_latest())
     app.navigate("settings")
     wait_threads()
-    app.logout()
+    # ----- краткие памятки
+    app.navigate("memos")
     wait_threads()
+    assert len(app._memo["rows"]) == 2
+    app._memo["tags"] = {"Полиция"}
+    app._memo_render()
+    app._memo["tags"].clear()
+    app._memo["open"].add("m1")
+    app._memo_render()
+    app.memo_dialog()
+    app.memo_dialog(app.db.memos[0])
+    app.memo_toggle_pin(app.db.memos[0])
+    app.memo_delete(app.db.memos[0])
+    wait_threads()
+    assert ("delete", "memos") in {(c[0], c[1]) for c in app.db.calls}
+    assert "u1/a.jpg" in app.db.deleted_objects
+    # публикация: новое фото загружается, убранное старое удаляется, при ошибке загруженное откатывается
+    import tempfile as _tf
+    from rmrp import memo_util as _M
+    png = os.path.join(_tf.mkdtemp(), "p.png")
+    if _M.Image is not None:
+        _M.Image.new("RGB", (40, 30), (10, 20, 30)).save(png)
+        app.db.deleted_objects.clear()
+        imgs = app.memo_persist(app.db.memos[0], {"title": "T", "content": "C", "tags": ["Закон"], "pinned": False},
+                                [{"kind": "old", "path": "u1/b.png"}, {"kind": "new", "file": png}], ["u1/a.jpg", "u1/b.png"])
+        assert len(imgs) == 2 and imgs[0] == "u1/b.png" and imgs[1].startswith("u1/"), imgs
+        assert app.db.uploaded and app.db.uploaded[-1][0] == "memo-images"
+        assert app.db.deleted_objects == ["u1/a.jpg"], app.db.deleted_objects
+        app.db.insert = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("rls"))
+        app.db.deleted_objects.clear()
+        try:
+            app.memo_persist(None, {"title": "T", "content": "", "tags": [], "pinned": False}, [{"kind": "new", "file": png}], [])
+            raise AssertionError("ожидалась ошибка")
+        except RuntimeError:
+            pass
+        assert len(app.db.deleted_objects) == 1, "после сбоя загруженное фото должно удаляться"
+        del app.db.insert
+    # гость видит памятки, но не редактор
+    app.guest = True
+    assert not app.can_publish_memos()
+    app.memo_dialog()
+    app.guest = False
+    # ----- команда на главной и цвета ролей
+    app.navigate("home")
+    wait_threads()
+    from rmrp import config as _C
+    app.db.data["app_settings"] = [{"value": '{"ADMIN": "#00ff00"}'}]
+    app.refresh_role_colors()
+    wait_threads()
+    assert _C.role_color("ADMIN") == "#00ff00"
+    app.db.data["app_settings"] = []
+    app.refresh_role_colors()
+    wait_threads()
+    assert _C.role_color("ADMIN") == _C.default_role_color("ADMIN")
+    # ----- автовход
+    from rmrp import session_store as _S
+    from rmrp.api import ApiError
+    app.db.on_tokens = app._on_tokens
+    app.settings["remember"] = True
+    _S.save(app.session_path, {"refresh_token": "r1", "user_id": "u1"})
+    app.user, app.prof = {}, {}
+    assert app.try_autologin() is True
+    wait_threads()
+    assert app.user.get("id") == "u1" and app.prof.get("role") == "FOUNDER", (app.user, app.prof)
+    assert _S.load(app.session_path)["refresh_token"] == "r2", "ротированный токен должен сохраняться"
+    app.db.restore_error = ApiError("Invalid Refresh Token", 400)  # токен отозван -> вход сбрасывается
+    assert app.try_autologin() is True
+    wait_threads()
+    assert _S.load(app.session_path) is None
+    _S.save(app.session_path, {"refresh_token": "r1"})
+    app.db.restore_error = ApiError("Нет соединения", 0)  # нет интернета -> вход сохраняется на следующий раз
+    app.try_autologin()
+    wait_threads()
+    assert _S.load(app.session_path) is not None
+    app.db.restore_error = None
+    app.settings["remember"] = False  # «не запоминать» -> автовхода нет и файл удаляется
+    assert app.try_autologin() is False and _S.load(app.session_path) is None
+    app.settings["remember"] = True
+    _S.save(app.session_path, {"refresh_token": "r1"})
+    app.logout()  # выход забывает вход на этом компьютере
+    wait_threads()
+    assert _S.load(app.session_path) is None
     if errors:
         print("ОШИБКИ:")
         for e in errors:
             print("  ", e)
         sys.exit(1)
-    print("OK: страницы обработаны без ошибок:", len(pages), "+ диалоги")
+    print("OK: страницы обработаны без ошибок:", len(pages), "+ диалоги, памятки, автовход, цвета ролей")
 
 
 if __name__ == "__main__":

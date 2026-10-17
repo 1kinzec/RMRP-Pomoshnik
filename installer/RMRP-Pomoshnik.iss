@@ -1,6 +1,6 @@
 #define MyAppName "RMRP Помощник"
 #ifndef MyAppVersion
-  #define MyAppVersion "2.4.1"
+  #define MyAppVersion "2.5.0"
 #endif
 #define MyAppPublisher "Kinzec X WOLF"
 #define MyAppExeName "RMRP_Pomoshnik.exe"
