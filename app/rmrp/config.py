@@ -35,29 +35,30 @@ LAW_SOURCES = [
      "url": "https://forum.rmrp.ru/threads/federalnyj-zakon-o-federalnoj-sluzhbe-vojsk-nacionalnoj-gvardii-no-18-fz.25071/"},
 ]
 
-# ---- Цвета (палитра с макета) ----
-BG = "#070b14"
-BG2 = "#0a101c"
-SIDEBAR = "#0a1220"
-PANEL = "#0f1828"
-PANEL2 = "#132036"
-PANEL3 = "#18294a"
-BORDER = "#1c2d4a"
-BORDER2 = "#27406a"
-ACCENT = "#2f7bf5"
-ACCENT_HI = "#4d92ff"
-ACCENT_LO = "#1f5fd0"
-ACCENT_TXT = "#6fb0ff"
-TEXT = "#f2f6fc"
-TEXT2 = "#c3d0e4"
-MUTED = "#7e91ad"
-DANGER = "#ef4444"
-DANGER_HI = "#ff5d5d"
-SUCCESS = "#22c55e"
-WARNING = "#f59e0b"
-PURPLE = "#8b5cf6"
-TEAL = "#14b8a6"
-ORANGE = "#f59e0b"
+# ---- Цвета: тёмная «стеклянная» тема с фиолетовым акцентом ----
+BG = "#07070d"
+BG2 = "#0c0d1a"
+SIDEBAR = "#0a0a15"
+PANEL = "#0f0f1e"
+PANEL2 = "#14152a"
+PANEL3 = "#1a1c30"
+BORDER = "#2a2d4b"
+BORDER2 = "#3a3d5f"
+ACCENT = "#8b6cf0"
+ACCENT_HI = "#a48bff"
+ACCENT_LO = "#6f52d6"
+ACCENT_TXT = "#a48bff"
+ACCENT_SOFT = "#2b214a"
+TEXT = "#f5f5fa"
+TEXT2 = "#a8aabe"
+MUTED = "#6e7090"
+DANGER = "#e27676"
+DANGER_HI = "#ec8a8a"
+SUCCESS = "#76d5a0"
+WARNING = "#f0b95a"
+PURPLE = "#b794f6"
+TEAL = "#4fd1c5"
+ORANGE = "#f0a15a"
 
 FONT = "Segoe UI"
 FONT_SYM = "Segoe UI Symbol"
@@ -66,7 +67,7 @@ FONT_SYM = "Segoe UI Symbol"
 ROLE_INFO = {
     "FOUNDER": ("👑", "Основатель", "#f5c542"),
     "ADMIN": ("🛡", "Администратор", "#ff6b6b"),
-    "MODERATOR": ("🔨", "Модератор", "#a78bfa"),
+    "MODERATOR": ("🔨", "Модератор", "#c4a8ff"),
     "PREMIUM": ("⭐", "Премиум пользователь", "#38bdf8"),
     "USER": ("👤", "Пользователь", "#8ea3bb"),
 }

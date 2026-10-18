@@ -9,11 +9,11 @@ import urllib.request
 from tkinter import ttk
 from tkinter import font as tkfont
 
-from .config import (ACCENT, ACCENT_HI, ACCENT_LO, ACCENT_TXT, BG, BORDER, BORDER2, DANGER, DANGER_HI, FONT, FONT_SYM,
+from .config import (ACCENT, ACCENT_HI, ACCENT_LO, ACCENT_SOFT, ACCENT_TXT, BG, BG2, BORDER, BORDER2, DANGER, DANGER_HI, FONT, FONT_SYM,
                      MUTED, PANEL, PANEL2, PANEL3, SIDEBAR, SUCCESS, TEXT, TEXT2, WARNING)
 
 try:  # Pillow необязателен: без него просто не будет картинок
-    from PIL import Image, ImageDraw, ImageFilter, ImageTk
+    from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageTk
 except Exception as _e:  # noqa: BLE001
     Image = ImageDraw = ImageFilter = ImageTk = None
     _PIL_ERROR = repr(_e)
@@ -145,44 +145,58 @@ def load_image(name, size=None):
     return _img_cache[key]
 
 
-def make_hero(w, h, seed=7):
-    """Ночной город с неоновым свечением — фон экрана входа (генерируется, не хранится в репозитории)."""
+def render_hero(w, h, glow_at=(.5, .30), seed=7):
+    """PIL-картинка фона входа: тёмный градиент с фиолетовым свечением, каркасные фигуры и звёздные точки."""
+    rnd = random.Random(seed)
+    # радиальный градиент (светлее в левом верхнем углу), считаем на маленькой сетке и растягиваем
+    grad = Image.new("RGB", (48, 48))
+    gp = grad.load()
+    c1, c2, c3 = (0x1f, 0x18, 0x38), (0x0c, 0x0d, 0x1a), (0x07, 0x07, 0x0d)
+    for yy in range(48):
+        for xx in range(48):
+            t = min(1.0, (((xx / 47 - .15) ** 2 + (yy / 47 - .2) ** 2) ** .5) / 1.1)
+            a, b, k = (c1, c2, t / .45) if t < .45 else (c2, c3, (t - .45) / .55)
+            gp[xx, yy] = tuple(int(a[i] + (b[i] - a[i]) * k) for i in range(3))
+    img = grad.resize((w, h), Image.BICUBIC)
+    # мягкое свечение за логотипом
+    glow = Image.new("RGB", (w, h), (0, 0, 0))
+    gx, gy, gr = int(w * glow_at[0]), int(h * glow_at[1]), int(min(w, h) * .26)
+    ImageDraw.Draw(glow).ellipse([gx - gr, gy - gr, gx + gr, gy + gr], fill=(0x42, 0x32, 0x8a))
+    glow = glow.filter(ImageFilter.GaussianBlur(gr * .7))
+    img = ImageChops.add(img, glow)
+    # каркасные фигуры и точки
+    over = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    od = ImageDraw.Draw(over)
+    line = (0x3a, 0x49, 0x70, 120)
+
+    def box(x, y, s):  # изометрический куб
+        top = [(x, y + s * .22), (x + s * .5, y), (x + s, y + s * .22), (x + s * .5, y + s * .44)]
+        od.polygon(top, outline=line)
+        od.line([(x, y + s * .22), (x, y + s * .72), (x + s * .5, y + s * .94), (x + s, y + s * .72), (x + s, y + s * .22)], fill=line)
+        od.line([(x + s * .5, y + s * .44), (x + s * .5, y + s * .94)], fill=line)
+
+    def pyramid(x, y, s):
+        od.polygon([(x + s / 2, y), (x, y + s * .75), (x + s, y + s * .75)], outline=line)
+        od.line([(x + s / 2, y), (x + s / 2, y + s * .47), (x, y + s * .75)], fill=line)
+        od.line([(x + s / 2, y + s * .47), (x + s, y + s * .75)], fill=line)
+    m = min(w, h)
+    box(w * .07, h * .11, m * .20)
+    box(w * .80, h * .22, m * .11)
+    pyramid(w * .70, h * .78, m * .17)
+    pyramid(w * .09, h * .72, m * .12)
+    for _ in range(28):
+        x, y, r = rnd.randint(0, w), rnd.randint(0, h), rnd.choice((1, 1, 2))
+        od.ellipse([x - r, y - r, x + r, y + r], fill=(0x6e, 0x70, 0x90, rnd.randint(70, 170)))
+    return Image.alpha_composite(img.convert("RGBA"), over)
+
+
+def make_hero(w, h, glow_at=(.5, .30)):
+    """Фон экрана входа (генерируется при запуске, в репозитории не хранится)."""
     if Image is None:
         return None
-    key = ("hero", w, h)
-    if key in _img_cache:
-        return _img_cache[key]
-    rnd = random.Random(seed)
-    img = Image.new("RGB", (w, h), "#060b16")
-    px = ImageDraw.Draw(img)
-    for y in range(h):  # вертикальный градиент неба
-        t = y / h
-        px.line([(0, y), (w, y)], fill=(int(8 + 14 * (1 - t)), int(14 + 34 * (1 - t) ** 1.4), int(30 + 70 * (1 - t) ** 1.2)))
-    glow = Image.new("RGB", (w, h), (0, 0, 0))
-    gd = ImageDraw.Draw(glow)
-    gd.ellipse([w * .15, h * .02, w * .95, h * .62], fill=(20, 70, 160))
-    glow = glow.filter(ImageFilter.GaussianBlur(w // 6))
-    img = Image.blend(img, Image.composite(glow, img, glow.convert("L")), .55)
-    d = ImageDraw.Draw(img)
-    x = -10
-    while x < w:  # дома
-        bw = rnd.randint(int(w * .06), int(w * .13))
-        bh = rnd.randint(int(h * .22), int(h * .62))
-        shade = rnd.randint(8, 18)
-        d.rectangle([x, h - bh, x + bw, h], fill=(shade, shade + 6, shade + 20), outline=(24, 48, 84))
-        for wy in range(h - bh + 12, h - 8, 16):
-            for wx in range(x + 8, x + bw - 8, 12):
-                if rnd.random() < .22:
-                    d.rectangle([wx, wy, wx + 4, wy + 6], fill=(70, 140, 230) if rnd.random() < .8 else (230, 190, 90))
-        x += bw + rnd.randint(2, 8)
-    d.rectangle([0, int(h * .93), w, h], fill=(4, 8, 14))  # дорога
-    d.line([(0, int(h * .93)), (w, int(h * .93))], fill=(28, 70, 130), width=2)
-    over = Image.new("RGBA", (w, h), (0, 0, 0, 0))  # затемнение к низу и краям
-    od = ImageDraw.Draw(over)
-    for y in range(h):
-        od.line([(0, y), (w, y)], fill=(4, 8, 16, int(150 * (y / h) ** 2)))
-    img = Image.alpha_composite(img.convert("RGBA"), over)
-    _img_cache[key] = ImageTk.PhotoImage(img)
+    key = ("hero", w, h, glow_at)
+    if key not in _img_cache:
+        _img_cache[key] = ImageTk.PhotoImage(render_hero(w, h, glow_at))
     return _img_cache[key]
 
 
@@ -201,14 +215,14 @@ class Avatar(tk.Canvas):
     def _draw(self):
         s = self.size
         self.delete("all")
-        self.create_oval(1, 1, s - 1, s - 1, fill=mix(ACCENT, "#06101f", .72), outline=self.ring, width=2)
+        self.create_oval(1, 1, s - 1, s - 1, fill=ACCENT_SOFT, outline=self.ring, width=2)
         if self._photo:
             self.create_image(s / 2, s / 2, image=self._photo)
         else:
-            self.create_text(s / 2, s / 2, text=(self.name[:1] or "?").upper(), fill="#b8d6ff", font=font(max(9, s // 3), True))
+            self.create_text(s / 2, s / 2, text=(self.name[:1] or "?").upper(), fill="#d9ccff", font=font(max(9, s // 3), True))
         if self.online is not None:
             r = max(4, s // 8)
-            self.create_oval(s - 2 * r - 1, s - 2 * r - 1, s - 1, s - 1, fill=SUCCESS if self.online else "#5d6b82", outline=self["bg"], width=2)
+            self.create_oval(s - 2 * r - 1, s - 2 * r - 1, s - 1, s - 1, fill=SUCCESS if self.online else MUTED, outline=self["bg"], width=2)
 
     def _load(self, url):
         if url in Avatar._url_cache:
@@ -307,9 +321,9 @@ def show_image(app, urls, index=0):
         return
     w = min(1100, app.winfo_screenwidth() - 120)
     h = min(780, app.winfo_screenheight() - 140)
-    win = modal(app, "Фото", w, h, "#04070d")
+    win = modal(app, "Фото", w, h, BG)
     state = {"i": index % len(urls), "photo": None}
-    cv = tk.Canvas(win, bg="#04070d", highlightthickness=0, bd=0)
+    cv = tk.Canvas(win, bg=BG, highlightthickness=0, bd=0)
     cv.pack(fill="both", expand=True)
 
     def render():
@@ -441,8 +455,8 @@ BUTTON_STYLES = {
     "secondary": dict(bg=PANEL2, hover=PANEL3, press=BORDER, fg=TEXT, border=BORDER2),
     "ghost": dict(bg=None, hover=PANEL2, press=PANEL3, fg=TEXT2, border=None),
     "outline": dict(bg=None, hover=mix(ACCENT, BG, .82), press=mix(ACCENT, BG, .7), fg=ACCENT_TXT, border=ACCENT_LO),
-    "danger": dict(bg=DANGER, hover=DANGER_HI, press="#c93030", fg="#ffffff", border=None),
-    "success": dict(bg=SUCCESS, hover="#3ad67d", press="#17a34a", fg="#04210f", border=None),
+    "danger": dict(bg=DANGER, hover=DANGER_HI, press="#c25a5a", fg="#ffffff", border=None),
+    "success": dict(bg=SUCCESS, hover="#8fe0b3", press="#5bbf88", fg="#0a2418", border=None),
     "nav": dict(bg=None, hover=mix(SIDEBAR, ACCENT, .12), press=mix(SIDEBAR, ACCENT, .25), fg=TEXT2, border=None,
                 active_bg=mix(SIDEBAR, ACCENT, .28), active_fg="#ffffff"),
     "link": dict(bg=None, hover=None, press=None, fg=ACCENT_TXT, border=None),
@@ -724,6 +738,11 @@ def icon_tile(parent, glyph, color, size=44, bg=None, radius=11):
     c.create_polygon(rr_points(1, 1, size - 1, size - 1, radius), smooth=True, fill=mix(bg, color, .22), outline=mix(bg, color, .5))
     c.create_text(size / 2, size / 2, text=glyph, fill=color, font=(FONT_SYM, int(size * .42), "bold"))
     return c
+
+
+def eyebrow(parent, text, color=MUTED, bg=None, size=8):
+    """Маленькая заглавная подпись над заголовком (как «УСТАНОВКА» в фирменном стиле)."""
+    return lbl(parent, text.upper(), size, True, color, bg=bg)
 
 
 def chip(parent, text, color=ACCENT_TXT, bg=None, size=8):

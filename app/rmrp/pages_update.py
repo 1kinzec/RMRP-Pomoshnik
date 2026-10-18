@@ -5,7 +5,7 @@ import webbrowser
 
 from . import ui
 from . import updater
-from .config import ACCENT_TXT, APP_NAME, APP_VERSION, FONT, MUTED, PANEL, PANEL2, TEXT, TEXT2
+from .config import ACCENT_TXT, DANGER, APP_NAME, APP_VERSION, FONT, MUTED, PANEL, PANEL2, TEXT, TEXT2
 
 CHECK_EVERY_MS = 6 * 60 * 60 * 1000
 
@@ -93,7 +93,7 @@ class UpdatePages:
                 except Exception as e:  # noqa: BLE001
                     def failed():
                         state["busy"] = False
-                        status.configure(text=f"Ошибка: {e}", fg="#ef4444")
+                        status.configure(text=f"Ошибка: {e}", fg=DANGER)
                         go.set_disabled(False)
                         later.set_disabled(False)
                         skip.set_disabled(False)
@@ -105,7 +105,7 @@ class UpdatePages:
                     try:
                         updater.launch_installer(path)
                     except Exception as e:  # noqa: BLE001
-                        status.configure(text=f"Не удалось запустить установщик: {e}", fg="#ef4444")
+                        status.configure(text=f"Не удалось запустить установщик: {e}", fg=DANGER)
                         return
                     self.after(600, self.on_close)
                 self._safe_after(launch)

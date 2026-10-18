@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from . import ui
 from .api import ApiError, Supabase
-from .config import (ACCENT, ACCENT_HI, ACCENT_TXT, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BG2, BORDER, FONT, HEARTBEAT_SEC, MUTED,
+from .config import (ACCENT, ACCENT_HI, ACCENT_TXT, APP_NAME, DANGER_HI, APP_PUBLISHER, APP_VERSION, BG, BG2, BORDER, FONT, HEARTBEAT_SEC, MUTED,
                      PANEL, PANEL2, ROLE_COLOR_OVERRIDES, ROLE_ORDER, SIDEBAR, TEXT, TEXT2, PURPLE, parse_role_colors, role_color, role_label, set_role_colors,
                      settings_dir)
 from .discord_rpc import DiscordRPC, build_activity
@@ -265,7 +265,7 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
             self._nav_item(side, "admin", "⚙", "Админ-панель", color=PURPLE)
         self._nav_item(side, "settings", "⛭", "Настройки")
         tk.Frame(side, bg=BORDER, height=1).pack(fill="x", padx=14, pady=8)
-        self._nav_item(side, "__logout", "⎋", "Выход", color="#ff8095")
+        self._nav_item(side, "__logout", "⎋", "Выход", color=DANGER_HI)
         tk.Label(side, text=f"v{APP_VERSION}  •  {APP_PUBLISHER}", font=(FONT, 7), fg=MUTED, bg=SIDEBAR).pack(pady=(2, 10))
 
         right = tk.Frame(shell, bg=BG)
@@ -274,7 +274,8 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
         top.pack(fill="x", padx=28, pady=(18, 6))
         titles = tk.Frame(top, bg=BG)
         titles.pack(side="left")
-        self.header_title = tk.Label(titles, text="", font=(FONT, 20, "bold"), fg=TEXT, bg=BG, anchor="w")
+        ui.eyebrow(titles, APP_NAME, ACCENT_TXT, bg=BG).pack(anchor="w", pady=(0, 2))
+        self.header_title = tk.Label(titles, text="", font=(FONT, 22, "bold"), fg=TEXT, bg=BG, anchor="w")
         self.header_title.pack(anchor="w")
         self.header_sub = tk.Label(titles, text="", font=(FONT, 9), fg=MUTED, bg=BG, anchor="w")
         self.header_sub.pack(anchor="w")
