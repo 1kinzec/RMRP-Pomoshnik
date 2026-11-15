@@ -4,7 +4,7 @@ import tkinter as tk
 from . import textutil as T
 from . import ui
 from .api import ApiError
-from .config import ACCENT, ACCENT_LO, ACCENT_TXT, BG, BORDER2, FONT, MUTED, PANEL, PANEL2, TEXT, TEXT2
+from .config import ACCENT, ACCENT_LO, ACCENT_TXT, BG, BORDER2, FONT, MUTED, ON_ACCENT, PANEL, PANEL2, TEXT, TEXT2
 
 QUICK = ["Какие права есть у задержанного?", "Можно ли провести досмотр?", "Что грозит за неповиновение?",
          "Какое наказание за оскорбление сотрудника полиции?", "89 УК РФ"]
@@ -131,7 +131,7 @@ class AiPages:
         row.pack(fill="x", pady=6)
         b = tk.Frame(row, bg=ACCENT)
         b.pack(side="right", padx=(80, 4))
-        tk.Label(b, text=text, bg=ACCENT, fg="#ffffff", font=(FONT, 10), wraplength=560, justify="left", padx=14, pady=10).pack()
+        tk.Label(b, text=text, bg=ACCENT, fg=ON_ACCENT, font=(FONT, 10), wraplength=560, justify="left", padx=14, pady=10).pack()
         self._chat.to_bottom()
 
     def _bot_bubble(self, text, sources=None, chips=None, on_chip=None):

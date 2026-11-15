@@ -54,11 +54,11 @@
 
 **Как выпустить обновление:** поменять версию в `app/rmrp/version.py`, дописать `RELEASE_NOTES.md`, запустить workflow. Первую версию с автообновлением нужно поставить вручную один раз.
 
-## Сборка на своём компьютере (Windows)
+## Сборка
 
-Дважды щёлкните **`build_windows.bat`**: он сам создаст окружение, соберёт `dist\RMRP_Pomoshnik.exe` и установщик `installer\output\RMRP-Pomoshnik-Setup-<версия>.exe` (если нет Inno Setup 6 — попробует поставить через winget). Нужен 64-битный Python 3.10+. `build_windows.bat /test` — со всеми тестами. Автообновление из GitHub работает только если задать репозиторий: `set GITHUB_REPO=владелец/репозиторий` перед сборкой (в сборке через GitHub Actions это делается автоматически).
+**На своём компьютере (Windows):** двойной щелчок по `build_windows.bat`. Скрипт сам поставит PyInstaller и Pillow, соберёт EXE, найдёт (или через winget поставит) Inno Setup и создаст `installer\output\RMRP-Pomoshnik-Setup-X.Y.Z.exe`. Нужен только Python 3.10+. Чтобы встроенное автообновление знало ваш репозиторий: `build_windows.bat владелец/репозиторий`.
 
-## Сборка через GitHub
+**Через GitHub:**
 
 GitHub → Actions → **Build and Release RMRP Помощник** → Run workflow (или `git tag v2.2.0 && git push --tags` — версия тега должна совпадать с `app/rmrp/version.py`). Сначала выполняются тесты (парсер, поиск, Discord IPC, дымовой тест интерфейса), затем собираются EXE и установщик.
 

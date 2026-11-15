@@ -1,6 +1,6 @@
-﻿#define MyAppName "RMRP Помощник"
+#define MyAppName "RMRP Помощник"
 #ifndef MyAppVersion
-  #define MyAppVersion "2.5.0"
+  #define MyAppVersion "2.6.0"
 #endif
 #define MyAppPublisher "Kinzec X WOLF"
 #define MyAppExeName "RMRP_Pomoshnik.exe"
@@ -63,18 +63,3 @@ ReadyLabel2=Нажмите «Установить», чтобы начать у�
 FinishedHeadingLabel=Установка завершена
 FinishedLabelNoIcons=RMRP Помощник версии {#MyAppVersion} успешно установлен.
 FinishedLabel=RMRP Помощник версии {#MyAppVersion} успешно установлен. Нажмите «Завершить», чтобы закрыть мастер.
-
-[Code]
-// При удалении предлагаем стереть сохранённый вход (автовход) и настройки этого компьютера.
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var
-  Dir: String;
-begin
-  if CurUninstallStep = usPostUninstall then
-  begin
-    Dir := ExpandConstant('{userappdata}\RMRP-Pomoshnik');
-    if DirExists(Dir) and not UninstallSilent then
-      if MsgBox('Удалить сохранённый вход и настройки приложения на этом компьютере?', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
-        DelTree(Dir, True, True, True);
-  end;
-end;

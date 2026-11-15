@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from . import textutil as T
 from . import ui
 from .api import ApiError
-from .config import (ACCENT, ACCENT_TXT, BG, BORDER, BORDER2, DANGER, DIFFICULTY_RU, DIFFICULTY_STARS, FONT, MUTED, ORANGE, PANEL, PANEL2, PURPLE,
+from .config import (ACCENT, ACCENT_TXT, BG, BORDER, BORDER2, DANGER, DIFFICULTY_RU, DIFFICULTY_STARS, FONT, MUTED, ON_ACCENT, ORANGE, PANEL, PANEL2, PURPLE,
                      SUCCESS, TEAL, TEXT, TEXT2, WARNING)
 
 ACCENTS = [ACCENT, PURPLE, TEAL, ORANGE]
@@ -169,7 +169,7 @@ class TestPages:
                 oc.pack(fill="x", pady=4)
                 r = tk.Frame(oc.body, bg=oc._bg)
                 r.pack(fill="x")
-                tk.Label(r, text=letter, font=(FONT, 10, "bold"), fg="#ffffff" if sel else ACCENT_TXT, bg=ACCENT if sel else PANEL2, width=3, pady=3).pack(side="left")
+                tk.Label(r, text=letter, font=(FONT, 10, "bold"), fg=ON_ACCENT if sel else ACCENT_TXT, bg=ACCENT if sel else PANEL2, width=3, pady=3).pack(side="left")
                 tk.Label(r, text=q["answer_" + letter.lower()], font=(FONT, 10), fg=TEXT, bg=oc._bg, wraplength=760, justify="left", anchor="w").pack(side="left", padx=12)
                 oc.make_clickable(lambda l=letter, qid=q["id"]: pick(qid, l))
             back.set_disabled(st["i"] == 0)

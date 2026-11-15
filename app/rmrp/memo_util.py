@@ -19,7 +19,7 @@ MAX_TITLE = 120
 MAX_CONTENT = 8000
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
 IMAGE_EXT = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp", ".gif": "image/gif"}
-_PALETTE = ["#2f7bf5", "#8b5cf6", "#14b8a6", "#f59e0b", "#ec4899", "#22c55e", "#06b6d4", "#ef4444"]
+_PALETTE = ["#12c27c", "#8b5cf6", "#14b8a6", "#f59e0b", "#ec4899", "#22c55e", "#06b6d4", "#ef4444"]
 _KNOWN = {name.lower(): color for name, color in MEMO_TAGS}
 
 

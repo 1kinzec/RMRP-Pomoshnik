@@ -7,7 +7,7 @@ from tkinter import ttk
 from . import textutil as T
 from . import ui
 from .api import ApiError
-from .config import (ACCENT, ACCENT_TXT, APP_NAME, DANGER, APP_PUBLISHER, APP_VERSION, BG, BORDER, FONT, MUTED, ORANGE, PANEL, PANEL2, PURPLE, SUCCESS,
+from .config import (ACCENT, ACCENT_TXT, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BORDER, FONT, MUTED, ORANGE, PANEL, PANEL2, PURPLE, SUCCESS,
                      TEAL, TEXT, TEXT2, WARNING, ROLE_COLOR_OVERRIDES, ROLE_INFO, ROLE_ORDER, default_role_color, role_color, role_label,
                      set_role_colors)
 
@@ -148,7 +148,7 @@ class ProfilePages:
             ui.RButton(row, "Спросить снова", lambda q=r["question"]: self.navigate("ai", preset=q), "outline", height=28, size=9).pack(side="right")
             when = r.get("created_at")
         else:
-            color = SUCCESS if r["score"] >= 70 else WARNING if r["score"] >= 40 else DANGER
+            color = SUCCESS if r["score"] >= 70 else WARNING if r["score"] >= 40 else "#ef4444"
             ui.lbl(row, (r.get("tests") or {}).get("title", "Тест"), 10, True).pack(side="left")
             ui.lbl(row, f"{r['score']}%  ({r['correct_answers']}/{r['total_questions']})", 10, True, color).pack(side="right")
             when = r.get("completed_at")

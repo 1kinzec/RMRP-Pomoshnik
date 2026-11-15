@@ -3,11 +3,11 @@ import tkinter as tk
 from datetime import datetime, timezone
 
 from . import ui
-from .config import (ACCENT, BORDER, DANGER, FONT, MUTED, ONLINE_WINDOW_SEC, ORANGE, PANEL, PANEL2, PURPLE, ROLE_ORDER, SUCCESS, TEAL, TEXT, TEXT2, WARNING,
+from .config import (ACCENT, BORDER, FONT, MUTED, ONLINE_WINDOW_SEC, ORANGE, PANEL, PANEL2, PURPLE, ROLE_ORDER, SUCCESS, TEAL, TEXT, TEXT2, WARNING,
                      ACCENT_TXT, role_color, role_label)
 from .textutil import fmt_date, is_online, parse_ts, plural
 
-ANN_COLORS = {"INFO": ACCENT, "UPDATE": SUCCESS, "WARNING": WARNING, "IMPORTANT": DANGER}
+ANN_COLORS = {"INFO": ACCENT, "UPDATE": SUCCESS, "WARNING": WARNING, "IMPORTANT": "#ef4444"}
 
 
 class HomePages:

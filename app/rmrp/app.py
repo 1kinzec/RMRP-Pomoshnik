@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from . import ui
 from .api import ApiError, Supabase
-from .config import (ACCENT, ACCENT_HI, ACCENT_TXT, APP_NAME, DANGER_HI, APP_PUBLISHER, APP_VERSION, BG, BG2, BORDER, FONT, HEARTBEAT_SEC, MUTED,
+from .config import (ACCENT, ACCENT_HI, ACCENT_TXT, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BG2, BORDER, FONT, HEARTBEAT_SEC, MUTED,
                      PANEL, PANEL2, ROLE_COLOR_OVERRIDES, ROLE_ORDER, SIDEBAR, TEXT, TEXT2, PURPLE, parse_role_colors, role_color, role_label, set_role_colors,
                      settings_dir)
 from .discord_rpc import DiscordRPC, build_activity
@@ -100,6 +100,7 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
         self.settings = self.load_settings()
         self.toasts = ui.Toasts(self)
         ui.RButton.click_hook = lambda: self.play_sound("click")
+        ui.Switch.click_hook = lambda: self.play_sound("click")
 
         self.rpc = DiscordRPC()
         self.hotkey = None
@@ -138,25 +139,45 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
         except tk.TclError:
             pass
 
-    def _tone(self, kind, freq, ms, vol):
-        key = (kind, freq, ms, vol)
+    # Звуки интерфейса: короткие «стеклянные» ноты (основной тон + мягкая гармоника, быстрое затухание).
+    # Каждая нота: (частота Гц, длительность мс, громкость 0..1, сдвиг начала мс).
+    SOUNDS = {
+        "click": [(760, 55, 1.0, 0)],
+        "hover": [(1040, 28, .55, 0)],
+        "open": [(520, 70, .8, 0), (780, 90, .7, 45)],
+        "success": [(660, 90, .9, 0), (880, 90, .85, 70), (1320, 150, .8, 140)],
+        "error": [(300, 120, 1.0, 0), (225, 170, 1.0, 85)],
+    }
+
+    def _tone(self, kind, vol):
+        key = (kind, vol)
         if key in self._sound_cache:
             return self._sound_cache[key]
-        path = os.path.join(tempfile.gettempdir(), f"rmrp2_{kind}_{freq}_{ms}_{vol}.wav")
+        path = os.path.join(tempfile.gettempdir(), f"rmrp3_{kind}_{vol}.wav")
         if not os.path.exists(path):
             rate = 22050
-            n = max(1, int(rate * ms / 1000))
-            amp = int(32767 * max(0, min(100, vol)) / 100)
-            ramp = max(1, int(rate * .006))
-            data = bytearray()
-            for i in range(n):
-                env = min(1, i / ramp, (n - i) / ramp)
-                data.extend(struct.pack("<h", int(amp * env * math.sin(2 * math.pi * freq * i / rate))))
+            notes = self.SOUNDS.get(kind, self.SOUNDS["click"])
+            total = max(off + ms for _f, ms, _g, off in notes)
+            buf = [0.0] * int(rate * total / 1000)
+            for freq, ms, gain, off in notes:
+                n = int(rate * ms / 1000)
+                start = int(rate * off / 1000)
+                attack = max(1, int(rate * .004))
+                for i in range(n):
+                    t = i / rate
+                    env = min(1.0, i / attack) * math.exp(-5.5 * i / n)
+                    f = freq * (1 + .06 * math.exp(-60 * t)) if kind == "click" else freq  # лёгкий «щелчок» вниз по высоте
+                    v = math.sin(2 * math.pi * f * t) + .28 * math.sin(2 * math.pi * 2 * f * t)
+                    if start + i < len(buf):
+                        buf[start + i] += v * env * gain
+            peak = max(1.0, max((abs(x) for x in buf), default=1.0))
+            amp = 32767 * max(0, min(100, vol)) / 100
+            data = b"".join(struct.pack("<h", int(amp * x / peak)) for x in buf)
             with wave.open(path, "wb") as w:
                 w.setnchannels(1)
                 w.setsampwidth(2)
                 w.setframerate(rate)
-                w.writeframes(bytes(data))
+                w.writeframes(data)
         self._sound_cache[key] = path
         return path
 
@@ -165,12 +186,11 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
             return
         if kind == "hover" and not self.settings.get("hover_sound"):
             return
-        freq, ms = {"click": (680, 22), "hover": (520, 12), "success": (610, 38), "error": (250, 55), "open": (480, 20)}.get(kind, (680, 22))
         vol = int(self.settings.get("sound_volume", 8))
 
         def run():
             try:
-                winsound.PlaySound(self._tone(kind, freq, ms, vol), winsound.SND_FILENAME | winsound.SND_ASYNC)
+                winsound.PlaySound(self._tone(kind, vol), winsound.SND_FILENAME | winsound.SND_ASYNC)
             except Exception:  # noqa: BLE001
                 pass
         threading.Thread(target=run, daemon=True).start()
@@ -265,7 +285,7 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
             self._nav_item(side, "admin", "⚙", "Админ-панель", color=PURPLE)
         self._nav_item(side, "settings", "⛭", "Настройки")
         tk.Frame(side, bg=BORDER, height=1).pack(fill="x", padx=14, pady=8)
-        self._nav_item(side, "__logout", "⎋", "Выход", color=DANGER_HI)
+        self._nav_item(side, "__logout", "⎋", "Выход", color="#ff8095")
         tk.Label(side, text=f"v{APP_VERSION}  •  {APP_PUBLISHER}", font=(FONT, 7), fg=MUTED, bg=SIDEBAR).pack(pady=(2, 10))
 
         right = tk.Frame(shell, bg=BG)
@@ -274,8 +294,7 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
         top.pack(fill="x", padx=28, pady=(18, 6))
         titles = tk.Frame(top, bg=BG)
         titles.pack(side="left")
-        ui.eyebrow(titles, APP_NAME, ACCENT_TXT, bg=BG).pack(anchor="w", pady=(0, 2))
-        self.header_title = tk.Label(titles, text="", font=(FONT, 22, "bold"), fg=TEXT, bg=BG, anchor="w")
+        self.header_title = tk.Label(titles, text="", font=(FONT, 20, "bold"), fg=TEXT, bg=BG, anchor="w")
         self.header_title.pack(anchor="w")
         self.header_sub = tk.Label(titles, text="", font=(FONT, 9), fg=MUTED, bg=BG, anchor="w")
         self.header_sub.pack(anchor="w")

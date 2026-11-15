@@ -35,30 +35,30 @@ LAW_SOURCES = [
      "url": "https://forum.rmrp.ru/threads/federalnyj-zakon-o-federalnoj-sluzhbe-vojsk-nacionalnoj-gvardii-no-18-fz.25071/"},
 ]
 
-# ---- Цвета: тёмная «стеклянная» тема с фиолетовым акцентом ----
-BG = "#07070d"
-BG2 = "#0c0d1a"
-SIDEBAR = "#0a0a15"
-PANEL = "#0f0f1e"
-PANEL2 = "#14152a"
-PANEL3 = "#1a1c30"
-BORDER = "#2a2d4b"
-BORDER2 = "#3a3d5f"
-ACCENT = "#8b6cf0"
-ACCENT_HI = "#a48bff"
-ACCENT_LO = "#6f52d6"
-ACCENT_TXT = "#a48bff"
-ACCENT_SOFT = "#2b214a"
-TEXT = "#f5f5fa"
-TEXT2 = "#a8aabe"
-MUTED = "#6e7090"
-DANGER = "#e27676"
-DANGER_HI = "#ec8a8a"
-SUCCESS = "#76d5a0"
-WARNING = "#f0b95a"
-PURPLE = "#b794f6"
-TEAL = "#4fd1c5"
-ORANGE = "#f0a15a"
+# ---- Цвета (палитра лаунчера RMRP: тёмный графит + мятный неон) ----
+BG = "#080e13"
+BG2 = "#0b1319"
+SIDEBAR = "#0b141a"
+PANEL = "#0f1920"
+PANEL2 = "#14212a"
+PANEL3 = "#1a2b36"
+BORDER = "#1d3039"
+BORDER2 = "#2a4551"
+ACCENT = "#12c27c"
+ACCENT_HI = "#2be39a"
+ACCENT_LO = "#0b9a62"
+ACCENT_TXT = "#3df0a6"
+ON_ACCENT = "#03170f"  # текст на мятной кнопке
+TEXT = "#f2f8f6"
+TEXT2 = "#c3d4d0"
+MUTED = "#7b9490"
+DANGER = "#ef4444"
+DANGER_HI = "#ff5d5d"
+SUCCESS = "#22c55e"
+WARNING = "#f59e0b"
+PURPLE = "#8b5cf6"
+TEAL = "#14b8a6"
+ORANGE = "#f59e0b"
 
 FONT = "Segoe UI"
 FONT_SYM = "Segoe UI Symbol"
@@ -67,7 +67,7 @@ FONT_SYM = "Segoe UI Symbol"
 ROLE_INFO = {
     "FOUNDER": ("👑", "Основатель", "#f5c542"),
     "ADMIN": ("🛡", "Администратор", "#ff6b6b"),
-    "MODERATOR": ("🔨", "Модератор", "#c4a8ff"),
+    "MODERATOR": ("🔨", "Модератор", "#a78bfa"),
     "PREMIUM": ("⭐", "Премиум пользователь", "#38bdf8"),
     "USER": ("👤", "Пользователь", "#8ea3bb"),
 }
@@ -119,7 +119,7 @@ def set_role_colors(colors):
 
 # ---- Краткие памятки ----
 MEMO_BUCKET = "memo-images"
-MEMO_TAGS = [("Важно", "#ef4444"), ("Полиция", "#3b82f6"), ("Суд", "#8b5cf6"), ("Процесс", "#14b8a6"), ("Закон", "#2f7bf5"),
+MEMO_TAGS = [("Важно", "#ef4444"), ("Полиция", "#3b82f6"), ("Суд", "#8b5cf6"), ("Процесс", "#14b8a6"), ("Закон", "#3b82f6"),
              ("Штрафы", "#f59e0b"), ("Задержание", "#ec4899"), ("Правила", "#22c55e"), ("Инструкция", "#06b6d4"), ("Новости", "#a3e635")]
 
 
