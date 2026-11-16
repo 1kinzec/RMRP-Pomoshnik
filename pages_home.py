@@ -3,7 +3,7 @@ import tkinter as tk
 from datetime import datetime, timezone
 
 from . import ui
-from .config import (ACCENT, BORDER, FONT, MUTED, ONLINE_WINDOW_SEC, ORANGE, PANEL, PANEL2, PURPLE, ROLE_ORDER, SUCCESS, TEAL, TEXT, TEXT2, WARNING,
+from .config import (ACCENT, APP_VERSION, BORDER, FONT, MUTED, ONLINE_WINDOW_SEC, ORANGE, PANEL, PANEL2, PURPLE, ROLE_ORDER, SUCCESS, TEAL, TEXT, TEXT2, WARNING,
                      ACCENT_TXT, role_color, role_label)
 from .textutil import fmt_date, is_online, parse_ts, plural
 
@@ -13,46 +13,115 @@ ANN_COLORS = {"INFO": ACCENT, "UPDATE": SUCCESS, "WARNING": WARNING, "IMPORTANT"
 class HomePages:
     def page_home(self):
         name = self.prof.get("display_name") or self.prof.get("username") or "Гость"
-        self.set_header(f"Добро пожаловать, {name}!", "Сегодня отличный день для новых знаний!")
+        self.set_header("Главная", "Ваш центр работы с законодательством RMRP")
         wrap = self.scroll()
+
+        # Welcome / city hero — drawn natively so it works in the packaged EXE without network assets.
+        hero = tk.Canvas(wrap, height=174, bg="#08162b", highlightthickness=1, highlightbackground="#1d4779")
+        hero.pack(fill="x", pady=(2, 16))
+        hero.update_idletasks()
+        hw = max(hero.winfo_width(), 700)
+        hero.create_rectangle(0, 0, hw, 174, fill="#08162b", outline="")
+        # Electric-blue atmospheric glow and skyline on the right.
+        hero.create_oval(hw * .48, -130, hw * 1.08, 250, fill="#102f62", outline="")
+        hero.create_oval(hw * .68, -100, hw * 1.12, 210, fill="#123b78", outline="")
+        import random
+        rnd = random.Random(31)
+        x = int(hw * .48)
+        while x < hw + 20:
+            bw = rnd.randint(28, 68)
+            bh = rnd.randint(48, 132)
+            top = 158 - bh
+            hero.create_rectangle(x, top, x + bw, 160, fill=rnd.choice(["#0b1d39", "#10284d", "#0c2346"]), outline="#1b4d89")
+            for wx in range(x + 7, x + bw - 5, 13):
+                for wy in range(top + 9, 151, 15):
+                    if rnd.random() > .52:
+                        hero.create_rectangle(wx, wy, wx + 3, wy + 5, fill="#3478f6", outline="")
+            x += bw + rnd.randint(5, 12)
+        hero.create_rectangle(0, 160, hw, 174, fill="#061020", outline="")
+        hero.create_text(28, 42, text=f"Привет, {name}!", anchor="w", fill="#f3f7ff", font=(FONT, 22, "bold"))
+        hero.create_text(29, 79, text="Рады видеть вас в RMRP Помощнике", anchor="w", fill="#d7e6ff", font=(FONT, 11))
+        hero.create_rectangle(28, 105, 32, 145, fill=ACCENT, outline="")
+        hero.create_text(44, 125, text="Изучай законы, проходи тесты и будь готов к любой ситуации!", anchor="w", fill="#a9c6f2", font=(FONT, 9))
+        hero.create_text(hw - 34, 40, text="RMRP", anchor="e", fill="#4b91ff", font=(FONT, 28, "bold"))
+        hero.create_text(hw - 34, 68, text=f"LEGAL TECH  •  v{APP_VERSION}", anchor="e", fill="#8db8ff", font=(FONT, 8, "bold"))
+
         tiles = tk.Frame(wrap, bg=wrap["bg"])
-        tiles.pack(fill="x", pady=(8, 16))
+        tiles.pack(fill="x", pady=(0, 15))
         for i in range(4):
             tiles.grid_columnconfigure(i, weight=1, uniform="t")
         self._home_tiles = {}
-        specs = [("laws", "▤", "Законодательство", "…", ACCENT), ("search", "⌕", "Поиск", "Быстрый поиск по законам", PURPLE),
-                 ("ai", "✦", "Нейросеть", "Задай вопрос помощнику", TEAL), ("tests", "✓", "Тесты", "Проверь свои знания", ORANGE)]
+        specs = [("laws", "§", "Законодательство", "Полная база законов RMRP", ACCENT),
+                 ("search", "⌕", "Поиск", "Быстрый поиск по статьям", PURPLE),
+                 ("ai", "✦", "Нейросеть", "Помощь по законодательству", "#8b75ff"),
+                 ("tests", "✓", "Проверь себя", "Тесты и проверка знаний", "#e6a94a")]
         for i, (key, glyph, title, sub, color) in enumerate(specs):
-            card = ui.Card(tiles, bg=ui.mix(PANEL, color, .10), border=ui.mix(PANEL, color, .45), radius=14, pad=16, height=150,
-                           hover_bg=ui.mix(PANEL, color, .2), hover_border=color)
-            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 7, 0 if i == 3 else 7))
-            ui.icon_tile(card.body, glyph, color, 52, bg=ui.mix(PANEL, color, .10)).pack(anchor="w")
-            ui.lbl(card.body, title, 13, True).pack(anchor="w", pady=(12, 2))
-            sub_l = ui.lbl(card.body, sub, 9, False, TEXT2)
+            card = ui.Card(tiles, bg=ui.mix(PANEL, color, .10), border=ui.mix(PANEL, color, .48), radius=15, pad=15, height=145,
+                           hover_bg=ui.mix(PANEL, color, .20), hover_border=color)
+            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0 if i == 3 else 6))
+            ui.icon_tile(card.body, glyph, color, 48, bg=ui.mix(PANEL, color, .13)).pack(anchor="w")
+            ui.lbl(card.body, title, 12, True).pack(anchor="w", pady=(9, 2))
+            sub_l = ui.lbl(card.body, sub, 8, False, TEXT2)
             sub_l.pack(anchor="w")
             card.make_clickable(lambda k=key: self.navigate(k))
             self._home_tiles[key] = sub_l
+
+        # Personal learning metrics.
+        stats = tk.Frame(wrap, bg=wrap["bg"])
+        stats.pack(fill="x", pady=(0, 14))
+        for i in range(4):
+            stats.grid_columnconfigure(i, weight=1, uniform="stats")
+        stat_values = {}
+        stat_specs = [("tests", "…", "Пройдено тестов", ACCENT), ("avg", "…", "Успешность", SUCCESS),
+                      ("views", "…", "Изучено статей", PURPLE), ("favs", "…", "В избранном", WARNING)]
+        for i, (key, value, label, color) in enumerate(stat_specs):
+            c = ui.Card(stats, radius=12, pad=12)
+            c.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 5, 0 if i == 3 else 5))
+            v = ui.lbl(c.body, value, 19, True, color)
+            v.pack(anchor="w")
+            ui.lbl(c.body, label, 8, False, MUTED).pack(anchor="w")
+            stat_values[key] = v
+        if self.guest:
+            for v in stat_values.values():
+                v.configure(text="—")
+        else:
+            def stats_work():
+                out = {"tests": 0, "avg": "—", "views": 0, "favs": 0}
+                try:
+                    results = self.db.table("test_results", "score", {"user_id": f"eq.{self.uid}"}, None, 500)
+                    out["tests"] = len(results)
+                    scores = [float(r.get("score")) for r in results if r.get("score") is not None]
+                    out["avg"] = f"{round(sum(scores) / len(scores))}%" if scores else "—"
+                except Exception:
+                    pass
+                for key, table, field in (("views", "article_views", "id"), ("favs", "favorites", "id")):
+                    try:
+                        out[key] = len(self.db.table(table, field, {"user_id": f"eq.{self.uid}"}, None, 500))
+                    except Exception:
+                        pass
+                return out
+            self.bg(stats_work, lambda data: [stat_values[k].configure(text=str(v)) for k, v in data.items()])
 
         cols = tk.Frame(wrap, bg=wrap["bg"])
         cols.pack(fill="both", expand=True)
         cols.grid_columnconfigure(0, weight=3, uniform="c")
         cols.grid_columnconfigure(1, weight=2, uniform="c")
-        left = ui.Card(cols, radius=14, pad=18)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
-        right = ui.Card(cols, radius=14, pad=18)
-        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
-        ui.lbl(left.body, "Последнее изученное", 13, True).pack(anchor="w", pady=(0, 10))
-        ui.lbl(right.body, "Объявления", 13, True).pack(anchor="w", pady=(0, 10))
+        left = ui.Card(cols, radius=14, pad=16)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        right = ui.Card(cols, radius=14, pad=16)
+        right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        ui.lbl(left.body, "Последнее изученное", 12, True).pack(anchor="w", pady=(0, 9))
+        ui.lbl(right.body, "Объявления", 12, True).pack(anchor="w", pady=(0, 9))
         self._home_recent = tk.Frame(left.body, bg=PANEL)
         self._home_recent.pack(fill="x")
         self._home_ann = tk.Frame(right.body, bg=PANEL)
         self._home_ann.pack(fill="x")
         self.loading(self._home_recent)
         self.loading(self._home_ann)
-        self._home_team = ui.Card(wrap, radius=14, pad=18)
-        self._home_team.pack(fill="x", pady=(14, 0))
-        ui.lbl(self._home_team.body, "Команда приложения", 13, True).pack(anchor="w")
-        ui.lbl(self._home_team.body, "Основатель, администраторы и модераторы RMRP Помощник.", 9, False, MUTED).pack(anchor="w", pady=(2, 10))
+        self._home_team = ui.Card(wrap, radius=14, pad=16)
+        self._home_team.pack(fill="x", pady=(13, 0))
+        ui.lbl(self._home_team.body, "Команда приложения", 12, True).pack(anchor="w")
+        ui.lbl(self._home_team.body, "Основатель, администраторы и модераторы RMRP Помощник.", 8, False, MUTED).pack(anchor="w", pady=(2, 8))
         self._home_team_grid = tk.Frame(self._home_team.body, bg=PANEL)
         self._home_team_grid.pack(fill="x")
 
@@ -60,23 +129,22 @@ class HomePages:
             out = {"laws": None, "recent": [], "ann": [], "team": []}
             try:
                 out["laws"] = len(self.db.table("laws", "id", {"is_active": "eq.true"}))
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             if not self.guest:
                 try:
-                    out["recent"] = self.db.table(
-                        "article_views", "viewed_at,law_articles(id,law_id,article_number,title,laws(short_name))",
-                        {"user_id": f"eq.{self.uid}"}, "viewed_at.desc", 5)
-                except Exception:  # noqa: BLE001
+                    out["recent"] = self.db.table("article_views", "viewed_at,law_articles(id,law_id,article_number,title,laws(short_name))",
+                                                  {"user_id": f"eq.{self.uid}"}, "viewed_at.desc", 5)
+                except Exception:
                     pass
             try:
                 out["ann"] = self.db.table("announcements", "id,title,content,type,created_at,expires_at", {"is_active": "eq.true"}, "created_at.desc", 6)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             try:
                 out["team"] = self.db.rpc("app_team")
-            except Exception:  # noqa: BLE001
-                pass  # миграция 2.5 ещё не выполнена — блок просто скрывается
+            except Exception:
+                pass
             return out
 
         def done(d):
