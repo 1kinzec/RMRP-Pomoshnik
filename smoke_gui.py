@@ -1,0 +1,451 @@
+"""Дымовой тест интерфейса без Tk: подставляет заглушку tkinter и фейковую БД, обходит все страницы.
+
+Запуск: python3 -I tests/smoke_gui.py   (ловит NameError/KeyError/неверные вызовы в логике страниц)
+Не заменяет проверку на реальном Windows — только логику.
+"""
+import os
+import sys
+import threading
+import time
+import types
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "app"))
+
+
+# ----------------------------------------------------------------------------- заглушка tkinter
+class W:
+    def __init__(self, *a, **k):
+        self._opts = dict(k)
+        self.master = a[0] if a and isinstance(a[0], W) else None
+        self._children = []
+        if self.master is not None:
+            self.master._children.append(self)
+
+    def __getitem__(self, k):
+        return self._opts.get(k, "#101010")
+
+    def __setitem__(self, k, v):
+        self._opts[k] = v
+
+    def keys(self):
+        return list(self._opts)
+
+    def cget(self, k):
+        return self._opts.get(k, "#101010")
+
+    def configure(self, *a, **k):
+        self._opts.update(k)
+
+    config = configure
+
+    def winfo_children(self):
+        return list(self._children)
+
+    def destroy(self):
+        if self.master is not None and self in self.master._children:
+            self.master._children.remove(self)
+
+    def winfo_exists(self):
+        return 1
+
+    def winfo_width(self):
+        return 800
+
+    winfo_height = winfo_reqwidth = winfo_reqheight = winfo_screenwidth = winfo_screenheight = winfo_rootx = winfo_rooty = winfo_x = winfo_y = winfo_width
+
+    def winfo_pointerxy(self):
+        return (0, 0)
+
+    def winfo_containing(self, x, y):
+        return None
+
+    def winfo_ismapped(self):
+        return True
+
+    def winfo_id(self):
+        return 1
+
+    def after(self, ms, fn=None, *a):
+        if fn and ms == 0:
+            fn(*a)
+        return "id"
+
+    def after_cancel(self, i):
+        pass
+
+    def search(self, *a, **k):
+        return ""
+
+    def curselection(self):
+        return ()
+
+    def selection(self):
+        return ()
+
+    def get_children(self, *a):
+        return ()
+
+    def state(self, *a):
+        return "normal"
+
+    def current(self, i=None):
+        return 0
+
+    def bbox(self, *a):
+        return None
+
+    def __getattr__(self, name):
+        if name.startswith("create_"):
+            return lambda *a, **k: 1
+        return lambda *a, **k: None
+
+
+class Var:
+    def __init__(self, master=None, value=None, **k):
+        self.v = "" if value is None else value
+
+    def get(self):
+        return self.v
+
+    def set(self, v):
+        self.v = v
+
+    def trace_add(self, *a):
+        pass
+
+
+class Font:
+    def __init__(self, **k):
+        pass
+
+    def measure(self, t):
+        return len(t) * 7
+
+
+tk = types.ModuleType("tkinter")
+for n in ("Tk", "Toplevel", "Frame", "Canvas", "Label", "Entry", "Text", "Listbox", "Checkbutton", "Scale", "Misc"):
+    setattr(tk, n, type(n, (W,), {}))
+tk.StringVar = tk.BooleanVar = tk.IntVar = Var
+tk.TclError = type("TclError", (Exception,), {})
+ttk = types.ModuleType("tkinter.ttk")
+for n in ("Style", "Treeview", "Combobox", "Scrollbar", "Progressbar", "Notebook"):
+    setattr(ttk, n, type(n, (W,), {}))
+fnt = types.ModuleType("tkinter.font")
+fnt.Font = Font
+fdlg = types.ModuleType("tkinter.filedialog")
+fdlg.askopenfilenames = lambda *a, **k: ()
+ccol = types.ModuleType("tkinter.colorchooser")
+ccol.askcolor = lambda *a, **k: ((1, 2, 3), "#AABBCC")
+tk.ttk, tk.font, tk.filedialog, tk.colorchooser = ttk, fnt, fdlg, ccol
+sys.modules.update({"tkinter": tk, "tkinter.ttk": ttk, "tkinter.font": fnt, "tkinter.filedialog": fdlg, "tkinter.colorchooser": ccol})
+
+
+# ----------------------------------------------------------------------------- фейковая БД
+class FakeDB:
+    access_token = "t"
+    refresh_token = "r"
+    on_tokens = None
+    user = {}
+    restore_error = None
+
+    def __init__(self):
+        self.calls = []
+        self.data = {
+            "laws": [{"id": 1, "name": "Уголовный Кодекс", "short_name": "УК РФ", "law_number": "УК РФ", "description": "d", "source_url": "http://x", "is_active": True,
+                      "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-02T00:00:00+00:00"},
+                     {"id": 2, "name": "ФЗ О полиции", "short_name": "ФЗ «О полиции»", "law_number": "74-ФЗ", "is_active": True}],
+            "law_stats": [{"law_id": 1, "articles": 3, "chapters": 2}],
+            "law_articles": [
+                {"id": 10, "law_id": 1, "article_number": "12", "title": "Принципы", "chapter": "Глава 1. Общие", "position": 1, "content": "Принципы законности и гуманизма в отношении лиц."},
+                {"id": 11, "law_id": 1, "article_number": "319", "title": "Оскорбление представителя власти", "chapter": "Глава 2. Власть", "position": 2,
+                 "content": "Публичное оскорбление представителя власти наказывается штрафом до 40 000 рублей."}],
+            "favorites": [], "article_views": [{"viewed_at": "2026-01-01T00:00:00+00:00", "law_articles": {"id": 10, "law_id": 1, "article_number": "12", "title": "T", "laws": {"short_name": "УК РФ"}}}],
+            "announcements": [{"id": 1, "title": "Обновление", "content": "Текст", "type": "UPDATE", "created_at": "2026-01-01T00:00:00+00:00", "is_active": True}],
+            "tests": [{"id": 1, "title": "УК РФ", "category": "УК", "description": "", "difficulty": "MEDIUM", "question_count": 1, "is_active": True}],
+            "questions": [{"id": 1, "question": "Q?", "answer_a": "a", "answer_b": "b", "answer_c": "c", "answer_d": "d", "correct_answer": "A", "explanation": "e"}],
+            "test_results": [{"test_id": 1, "score": 80, "correct_answers": 4, "total_questions": 5, "completed_at": "2026-01-01T00:00:00+00:00", "tests": {"title": "УК"}}],
+            "profiles": [{"id": "u1", "username": "kinzec", "display_name": "Kinzec", "role": "FOUNDER", "status": "ACTIVE", "premium": True, "allow_pranks": True,
+                          "created_at": "2026-01-01T00:00:00+00:00", "last_seen_at": "2026-10-10T00:00:00+00:00"},
+                         {"id": "u2", "username": "alex", "display_name": "Alex", "role": "USER", "status": "ACTIVE", "premium": False, "allow_pranks": True}],
+            "reports": [{"id": 1, "reason": "R", "description": "D", "status": "NEW", "created_at": "2026-01-01T00:00:00+00:00", "author": {"username": "alex"}, "target": None}],
+            "audit_logs": [{"created_at": "2026-01-01T00:00:00+00:00", "action": "A", "target_type": "t", "target_id": "1", "profiles": {"username": "kinzec"}}],
+            "search_history": [{"query": "статья 12", "created_at": "2026-01-01T00:00:00+00:00"}],
+            "ai_history": [{"question": "q", "answer": "a", "created_at": "2026-01-01T00:00:00+00:00", "law_article_id": 1}],
+            "app_settings": [], "law_versions": [{"version": "1", "change_description": "d", "created_at": "2026-01-01T00:00:00+00:00"}],
+            "test_favorites": [], "prank_events": [],
+        }
+        self.memos = [{"id": "m1", "title": "Задержание", "content": "Права " * 120, "tags": ["Полиция", "Важно"], "images": ["u1/a.jpg", "u1/b.png"], "pinned": True,
+                       "created_at": "2026-02-01T10:00:00+00:00", "updated_at": "2026-02-02T10:00:00+00:00", "author_id": "u1", "author_name": "Kinzec",
+                       "author_role": "FOUNDER", "author_avatar": None},
+                      {"id": "m2", "title": "Штрафы", "content": "Кратко", "tags": [], "images": [], "pinned": False, "created_at": "2026-01-01T10:00:00+00:00",
+                       "updated_at": "2026-01-01T10:00:00+00:00", "author_id": None, "author_name": None, "author_role": None, "author_avatar": None}]
+        self.team = [{"id": "u2", "username": "mod", "display_name": "Moder", "avatar_url": None, "role": "MODERATOR", "last_seen_at": None},
+                     {"id": "u1", "username": "kinzec", "display_name": "Kinzec", "avatar_url": None, "role": "FOUNDER", "last_seen_at": "2026-10-10T00:00:00+00:00"}]
+        self.uploaded, self.deleted_objects = [], []
+
+    def table(self, name, select="*", filters=None, order=None, limit=None, offset=None):
+        self.calls.append(("table", name, filters))
+        rows = list(self.data.get(name, []))
+        for k, v in (filters or {}).items():
+            if k == "or" or not isinstance(v, str) or not v.startswith("eq."):
+                continue
+            want = v[3:]
+            rows = [r for r in rows if str(r.get(k)) == want] if any(k in r for r in rows) else rows
+        return rows[:limit] if limit else rows
+
+    def table_all(self, name, select="*", filters=None, order=None, max_rows=0):
+        return self.table(name, select, filters, order)
+
+    def insert(self, name, rows, select="*", upsert_on=None, ignore_duplicates=False):
+        self.calls.append(("insert", name, rows))
+        rows = rows if isinstance(rows, list) else [rows]
+        return [dict(r, id=99) for r in rows]
+
+    def update(self, name, filters, values, select="*", expect=False):
+        self.calls.append(("update", name, values))
+        return [values]
+
+    def delete(self, name, filters, expect=False):
+        self.calls.append(("delete", name, filters))
+        return [{"id": 1}]
+
+    def rpc(self, fn, payload=None):
+        self.calls.append(("rpc", fn, payload))
+        return {"memos_feed": lambda: self.memos, "app_team": lambda: self.team}.get(fn, lambda: "a@b.c")()
+
+    def public_url(self, bucket, path):
+        return f"https://x/storage/v1/object/public/{bucket}/{path}"
+
+    def upload_object(self, bucket, path, data, content_type):
+        self.uploaded.append((bucket, path, len(data), content_type))
+        return self.public_url(bucket, path)
+
+    def delete_objects(self, bucket, paths):
+        self.deleted_objects.extend(paths)
+
+    def restore_session(self, token):
+        if self.restore_error:
+            raise self.restore_error
+        self.user = {"id": "u1"}
+        self.refresh_token = "r2"
+        if self.on_tokens:
+            self.on_tokens("r2")
+        return {}
+
+    def auth_logout(self):
+        pass
+
+
+def wait_threads():
+    for _ in range(40):
+        time.sleep(0.05)
+        if threading.active_count() <= 1:
+            break
+    time.sleep(0.1)
+
+
+def main():
+    import tempfile
+    os.environ["APPDATA"] = tempfile.mkdtemp()
+    from rmrp.app import App
+    errors = []
+    app = App()
+    app.db = FakeDB()
+    orig = app.notify
+
+    def notify(title, message="", kind="info", duration=None):
+        if kind == "error":
+            errors.append((title, message))
+    app.notify = notify
+    app.show_login()
+    app.show_login("register")
+    app.do_guest()
+    app.user = {"id": "u1", "email": "k@x.y"}
+    app.prof = dict(app.db.data["profiles"][0], bio="")
+    app.guest = False
+    app.show_main()
+    pages = [("home", {}), ("laws", {}), ("law", {"law_id": 1}), ("law", {"law_id": 1, "article_id": 11, "highlight": ["оскорблен"]}), ("search", {}), ("search", {"q": "статья 12"}),
+             ("memos", {}), ("ai", {}), ("ai", {"preset": "Что грозит за оскорбление?"}), ("tests", {}), ("favorites", {}), ("history", {}), ("reports", {}), ("profile", {}), ("settings", {}),
+             ("admin", {}), ("admin", {"section": "users"}), ("admin", {"section": "roles"}), ("admin", {"section": "reports"}), ("admin", {"section": "tests"}),
+             ("admin", {"section": "laws"}), ("admin", {"section": "ann"}), ("admin", {"section": "audit"}), ("admin", {"section": "screamer"})]
+    for key, kw in pages:
+        app.navigate(key, **kw)
+        wait_threads()
+    # прохождение теста и разбор результата
+    app.start_test(app.db.data["tests"][0])
+    wait_threads()
+    qs = app.db.data["questions"]
+    app._finish_test(app.db.data["tests"][0], qs, {1: "B"})
+    wait_threads()
+    # поиск, помощник, статья-ссылка
+    rows = app.search_articles("оскорбление власти", 5)
+    assert rows and rows[0]["article_number"] == "319", rows
+    rows = app.search_articles("статья 12", 5)
+    assert rows and rows[0]["article_number"] == "12", rows
+    ans, src = app._compose("наказание за оскорбление", app.search_articles("наказание за оскорбление", 5))
+    assert "штраф" in ans and src, ans
+    ans, src = app._compose("zzzz", [])
+    assert "не буду придумывать" in ans
+    # правка и удаление админом
+    law = app.db.data["laws"][0]
+    art = app.db.data["law_articles"][0]
+    t = app.db.data["tests"][0]
+    ui_mod = sys.modules["rmrp.ui"]
+    ui_mod.confirm = lambda *a, **k: True
+    app.edit_article(law, art)
+    app.delete_article(law, art)
+    app.delete_law(law)
+    app.edit_test(t)
+    app.delete_test(t)
+    app.questions_dialog(t)
+    app.edit_question(t, app.db.data["questions"][0])
+    app._del_question(t, app.db.data["questions"][0], W())
+    app.add_question(1)
+    app.delete_report(app.db.data["reports"][0])
+    app.delete_closed_reports()
+    wait_threads()
+    kinds = {(c[0], c[1]) for c in app.db.calls}
+    for need in [("delete", "law_articles"), ("delete", "laws"), ("delete", "tests"), ("delete", "questions"), ("delete", "reports")]:
+        assert need in kinds, need
+    # нейросеть: беседа, номер статьи, «подробнее», вопрос не по теме
+    a, src = app._answer("привет")
+    assert not src and "помощник" in a.lower() or "помочь" in a.lower(), a
+    a, src = app._answer("319 ук рф")
+    assert src and src[0]["article_number"] == "319" and "Оскорбление" in a, a
+    a, src = app._answer("89 ук рф")
+    assert not src and "нет" in a, a
+    app._ai_last = app.search_articles("статья 319", 1)[0]
+    a, src = app._answer("подробнее")
+    assert "штрафом" in a, a
+    a, src = app._answer("расскажи рецепт борща")
+    assert not src and "не буду придумывать" in a, a
+    a, src = app._answer("Привет, что грозит за оскорбление власти")
+    assert src and src[0]["article_number"] == "319", a
+    # регрессия: «что грозит за неповиновение» не должно давать статью про угрозу убийством
+    extra = [
+        {"id": 12, "law_id": 1, "article_number": "39", "title": "Угроза убийством или причинением тяжкого вреда здоровью", "chapter": "Г", "position": 3,
+         "content": "Угроза убийством, если имелись основания опасаться осуществления этой угрозы, –\nнаказывается лишением свободы на срок до двух лет."},
+        {"id": 13, "law_id": 2, "article_number": "19.3", "title": "Неповиновение законному распоряжению сотрудника полиции", "chapter": "Г", "position": 4,
+         "content": "Неповиновение законному распоряжению или требованию сотрудника полиции –\nвлечет наложение административного штрафа в размере от 500 до 1000 рублей."},
+        {"id": 14, "law_id": 2, "article_number": "5", "title": "Задержание", "chapter": "Г", "position": 5,
+         "content": "Задержание лица допускается при наличии оснований. Задержанному разъясняются его права."}]
+    app.db.data["law_articles"].extend(extra)
+    a, src = app._answer("Что грозит за неповиновение?")
+    assert src and src[0]["article_number"] == "19.3" and "штраф" in a and "Угроза" not in a, a
+    assert all(r["article_number"] != "39" for r in src), src
+    a, src = app._answer("Что будет если задержали?")  # форма глагола сводится к статье «Задержание»
+    assert src and src[0]["article_number"] == "5", a
+    keys = [(r["law_short"], r["article_number"]) for r in src]
+    assert len(keys) == len(set(keys)), keys  # без дублей в «Также полезно»
+    for r in extra:
+        app.db.data["law_articles"].remove(r)
+    app.show_screamer()
+    app.discord_dialog()
+    app.sync_laws()
+    wait_threads()
+    app.add_law_dialog()
+    app.create_report()
+    app.add_test()
+    app.add_announcement()
+    app.overlay.show()
+    from rmrp import updater
+    updater.GITHUB_REPO = "o/r"
+    updater.check_latest = lambda: {"version": "9.9.9", "notes": "n", "name": "RMRP-Pomoshnik-Setup-9.9.9.exe", "url": "https://github.com/x", "size": 1,
+                                    "sha_url": None, "page": "https://github.com/o/r/releases"}
+    app.check_updates(manual=True)
+    wait_threads()
+    app.update_dialog(updater.check_latest())
+    app.navigate("settings")
+    wait_threads()
+    # ----- краткие памятки
+    app.navigate("memos")
+    wait_threads()
+    assert len(app._memo["rows"]) == 2
+    app._memo["tags"] = {"Полиция"}
+    app._memo_render()
+    app._memo["tags"].clear()
+    app._memo["open"].add("m1")
+    app._memo_render()
+    app.memo_dialog()
+    app.memo_dialog(app.db.memos[0])
+    app.memo_toggle_pin(app.db.memos[0])
+    app.memo_delete(app.db.memos[0])
+    wait_threads()
+    assert ("delete", "memos") in {(c[0], c[1]) for c in app.db.calls}
+    assert "u1/a.jpg" in app.db.deleted_objects
+    # публикация: новое фото загружается, убранное старое удаляется, при ошибке загруженное откатывается
+    import tempfile as _tf
+    from rmrp import memo_util as _M
+    png = os.path.join(_tf.mkdtemp(), "p.png")
+    if _M.Image is not None:
+        _M.Image.new("RGB", (40, 30), (10, 20, 30)).save(png)
+        app.db.deleted_objects.clear()
+        imgs = app.memo_persist(app.db.memos[0], {"title": "T", "content": "C", "tags": ["Закон"], "pinned": False},
+                                [{"kind": "old", "path": "u1/b.png"}, {"kind": "new", "file": png}], ["u1/a.jpg", "u1/b.png"])
+        assert len(imgs) == 2 and imgs[0] == "u1/b.png" and imgs[1].startswith("u1/"), imgs
+        assert app.db.uploaded and app.db.uploaded[-1][0] == "memo-images"
+        assert app.db.deleted_objects == ["u1/a.jpg"], app.db.deleted_objects
+        app.db.insert = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("rls"))
+        app.db.deleted_objects.clear()
+        try:
+            app.memo_persist(None, {"title": "T", "content": "", "tags": [], "pinned": False}, [{"kind": "new", "file": png}], [])
+            raise AssertionError("ожидалась ошибка")
+        except RuntimeError:
+            pass
+        assert len(app.db.deleted_objects) == 1, "после сбоя загруженное фото должно удаляться"
+        del app.db.insert
+    # гость видит памятки, но не редактор
+    app.guest = True
+    assert not app.can_publish_memos()
+    app.memo_dialog()
+    app.guest = False
+    # ----- команда на главной и цвета ролей
+    app.navigate("home")
+    wait_threads()
+    from rmrp import config as _C
+    app.db.data["app_settings"] = [{"value": '{"ADMIN": "#00ff00"}'}]
+    app.refresh_role_colors()
+    wait_threads()
+    assert _C.role_color("ADMIN") == "#00ff00"
+    app.db.data["app_settings"] = []
+    app.refresh_role_colors()
+    wait_threads()
+    assert _C.role_color("ADMIN") == _C.default_role_color("ADMIN")
+    # ----- автовход
+    from rmrp import session_store as _S
+    from rmrp.api import ApiError
+    app.db.on_tokens = app._on_tokens
+    app.settings["remember"] = True
+    _S.save(app.session_path, {"refresh_token": "r1", "user_id": "u1"})
+    app.user, app.prof = {}, {}
+    assert app.try_autologin() is True
+    wait_threads()
+    assert app.user.get("id") == "u1" and app.prof.get("role") == "FOUNDER", (app.user, app.prof)
+    assert _S.load(app.session_path)["refresh_token"] == "r2", "ротированный токен должен сохраняться"
+    app.db.restore_error = ApiError("Invalid Refresh Token", 400)  # токен отозван -> вход сбрасывается
+    assert app.try_autologin() is True
+    wait_threads()
+    assert _S.load(app.session_path) is None
+    _S.save(app.session_path, {"refresh_token": "r1"})
+    app.db.restore_error = ApiError("Нет соединения", 0)  # нет интернета -> вход сохраняется на следующий раз
+    app.try_autologin()
+    wait_threads()
+    assert _S.load(app.session_path) is not None
+    app.db.restore_error = None
+    app.settings["remember"] = False  # «не запоминать» -> автовхода нет и файл удаляется
+    assert app.try_autologin() is False and _S.load(app.session_path) is None
+    app.settings["remember"] = True
+    _S.save(app.session_path, {"refresh_token": "r1"})
+    app.logout()  # выход забывает вход на этом компьютере
+    wait_threads()
+    assert _S.load(app.session_path) is None
+    if errors:
+        print("ОШИБКИ:")
+        for e in errors:
+            print("  ", e)
+        sys.exit(1)
+    print("OK: страницы обработаны без ошибок:", len(pages), "+ диалоги, памятки, автовход, цвета ролей")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,108 @@
+name: Build and Release RMRP Помощник
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]   # git tag v3.0.0 && git push --tags — тоже запускает выпуск
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Установить Pillow
+        run: python -m pip install --disable-pip-version-check pillow
+      - name: Проверить синтаксис
+        run: python -m compileall -q app
+      - name: Юнит-тесты (парсер, поиск, Discord RPC, обновления)
+        run: python -I -m unittest discover -s tests -v
+      - name: Дымовой тест интерфейса (без Tk)
+        run: python -I tests/smoke_gui.py
+
+  build:
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write   # нужно для публикации релиза (автообновление)
+    steps:
+      - name: Скачать проект
+        uses: actions/checkout@v5
+
+      - name: Установить Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          architecture: x64
+
+      - name: Версия и адрес репозитория
+        id: ver
+        shell: powershell
+        run: |
+          $v = (Select-String -Path app/rmrp/version.py -Pattern '"([^"]+)"').Matches[0].Groups[1].Value
+          "version=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          # Приложение берёт отсюда репозиторий для проверки обновлений
+          if ("${{ github.ref_type }}" -eq "tag" -and "${{ github.ref_name }}" -ne "v$v") { Write-Error "Тег ${{ github.ref_name }} не совпадает с версией v$v из version.py"; exit 1 }
+          [System.IO.File]::WriteAllText("$PWD/app/rmrp/build_info.py", "GITHUB_REPO = '${{ github.repository }}'`n")
+          Write-Host "Версия: $v, репозиторий: ${{ github.repository }}"
+
+      - name: Установить зависимости
+        run: python -m pip install --disable-pip-version-check pyinstaller==6.16.0 pillow
+
+      - name: Собрать EXE
+        run: >
+          python -m PyInstaller
+          --noconfirm
+          --clean
+          --onefile
+          --windowed
+          --name RMRP_Pomoshnik
+          --icon installer/assets/rmrp.ico
+          --paths app
+          --add-data "app/assets;assets"
+          --add-data "installer/assets/rmrp.ico;assets"
+          app/RMRP_Pomoshnik.pyw
+
+      - name: Установить Inno Setup
+        shell: powershell
+        run: choco install innosetup --no-progress -y
+
+      - name: Собрать установщик
+        shell: powershell
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ steps.ver.outputs.version }}" installer\RMRP-Pomoshnik.iss
+
+      - name: Проверить установщик и посчитать SHA-256
+        shell: powershell
+        run: |
+          $v = "${{ steps.ver.outputs.version }}"
+          $f = "installer/output/RMRP-Pomoshnik-Setup-$v.exe"
+          if (-not (Test-Path $f)) { Write-Error "Установщик $v не создан."; exit 1 }
+          $h = (Get-FileHash $f -Algorithm SHA256).Hash.ToLower()
+          [System.IO.File]::WriteAllText("$PWD/$f.sha256", "$h  RMRP-Pomoshnik-Setup-$v.exe`n")
+          Write-Host "SHA-256: $h"
+
+      - name: Загрузить файлы сборки
+        uses: actions/upload-artifact@v4
+        with:
+          name: RMRP-Pomoshnik-Windows-v${{ steps.ver.outputs.version }}
+          path: |
+            dist/RMRP_Pomoshnik.exe
+            installer/output/RMRP-Pomoshnik-Setup-${{ steps.ver.outputs.version }}.exe
+            installer/output/RMRP-Pomoshnik-Setup-${{ steps.ver.outputs.version }}.exe.sha256
+
+      - name: Опубликовать релиз (отсюда приложения берут обновления)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: RMRP Помощник ${{ steps.ver.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          files: |
+            installer/output/RMRP-Pomoshnik-Setup-${{ steps.ver.outputs.version }}.exe
+            installer/output/RMRP-Pomoshnik-Setup-${{ steps.ver.outputs.version }}.exe.sha256
