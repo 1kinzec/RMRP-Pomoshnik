@@ -63,6 +63,26 @@ class ApiTest(unittest.TestCase):
                 db.restore_session("r")
         self.assertEqual(cm.exception.status, 0)
 
+    def test_publishable_key_is_not_sent_as_bearer_token(self):
+        db = api.Supabase()
+        with mock.patch("urllib.request.urlopen", return_value=Resp(b'"user@example.com"')) as op:
+            result = db.rpc("login_email", {"p_username": "tester"})
+        req = op.call_args[0][0]
+        headers = {k.lower(): v for k, v in req.header_items()}
+        self.assertEqual(result, "user@example.com")
+        self.assertTrue(headers["apikey"].startswith("sb_publishable_"))
+        self.assertNotIn("authorization", headers)
+
+    def test_user_jwt_is_sent_as_bearer_after_login(self):
+        db = api.Supabase()
+        db.access_token = "USER_JWT"
+        with mock.patch("urllib.request.urlopen", return_value=Resp(b'[]')) as op:
+            db.table("profiles")
+        req = op.call_args[0][0]
+        headers = {k.lower(): v for k, v in req.header_items()}
+        self.assertEqual(headers["authorization"], "Bearer USER_JWT")
+        self.assertTrue(headers["apikey"].startswith("sb_publishable_"))
+
     def test_upload_sends_raw_bytes_with_auth(self):
         db = api.Supabase()
         db.access_token = "TOKEN"

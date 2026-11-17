@@ -8,4 +8,11 @@ insert into public.laws (name, short_name, law_number, description, source_url, 
 ('Кодекс об административных правонарушениях Российской Федерации','КоАП РФ','КоАП РФ','Актуальная редакция RMRP.','https://forum.rmrp.ru/threads/kodeks-ob-administrativnyx-pravonarushenijax-rossijskoj-federacii.58229/',true),
 ('Процессуальный Кодекс Российской Федерации','Процессуальный кодекс','ПК РФ','Актуальная редакция RMRP.','https://forum.rmrp.ru/threads/processualnyj-kodeks-rossijskoj-federacii.58424/',true),
 ('Федеральный закон «О полиции» № 74-ФЗ','ФЗ «О полиции»','74-ФЗ','Актуальная редакция RMRP.','https://forum.rmrp.ru/threads/federalnyj-zakon-o-policii-no-74-fz.25074/',true),
-('Федеральный закон «О Федеральной службе войск национальной гвардии» № 18-ФЗ','ФЗ «О ФСВНГ»','18-ФЗ','Актуальная редакция RMRP.','https://forum.rmrp.ru/threads/federalnyj-zakon-o-federalnoj-sluzhbe-vojsk-nacionalnoj-gvardii-no-18-fz.25071/',true);
+('Федеральный закон «О Федеральной службе войск национальной гвардии» № 18-ФЗ','ФЗ «О ФСВНГ»','18-ФЗ','Актуальная редакция RMRP.','https://forum.rmrp.ru/threads/federalnyj-zakon-o-federalnoj-sluzhbe-vojsk-nacionalnoj-gvardii-no-18-fz.25071/',true)
+ON CONFLICT (source_url) DO UPDATE SET
+  name = EXCLUDED.name,
+  short_name = EXCLUDED.short_name,
+  law_number = EXCLUDED.law_number,
+  description = EXCLUDED.description,
+  is_active = EXCLUDED.is_active,
+  updated_at = now();

@@ -16,6 +16,11 @@ from .config import (ACCENT, ACCENT_HI, ACCENT_LO, ACCENT_TXT, APP_NAME, BG, BOR
 ART_COLS = "id,law_id,article_number,title,chapter,position"
 ART_COLS_OLD = "id,law_id,article_number,title"
 
+# Защита от частичной выгрузки форума: если распознано менее 70%
+# уже имеющихся статей, синхронизация прерывается до любых изменений в БД.
+MIN_SYNC_COVERAGE = 0.70
+MIN_SYNC_ARTICLES = 3
+
 
 class LawPages:
     # ================================================================== данные
@@ -107,59 +112,184 @@ class LawPages:
 
     # ================================================================== список законов
     def page_laws(self):
-        self.set_header("Законодательство", "Актуальные законы и кодексы RMRP")
+        """Каталог законодательства: поиск, фильтры и панель выбранного документа."""
+        self.set_header("Законодательство", "База нормативных документов сервера RMRP")
         wrap = self.content
-        bar = tk.Frame(wrap, bg=BG)
-        bar.pack(fill="x", pady=(4, 12))
-        search = ui.Field(bar, "Поиск по законам…", height=40, icon="⌕", on_return=lambda: render())
+
+        # Верхняя информационная панель в общей синей визуальной системе приложения.
+        hero = tk.Frame(wrap, bg="#101D32", highlightbackground=BORDER, highlightthickness=1)
+        hero.pack(fill="x", pady=(2, 12))
+        hero_inner = tk.Frame(hero, bg="#101D32")
+        hero_inner.pack(fill="x", padx=20, pady=15)
+        left_hero = tk.Frame(hero_inner, bg="#101D32")
+        left_hero.pack(side="left", fill="x", expand=True)
+        ui.lbl(left_hero, "ЦЕНТР ЗАКОНОДАТЕЛЬСТВА RMRP", 8, True, ACCENT_TXT).pack(anchor="w")
+        ui.lbl(left_hero, "Все нормы — в одном месте", 17, True, TEXT).pack(anchor="w", pady=(5, 2))
+        ui.lbl(left_hero, "Находите нужный документ, изучайте статьи и проверяйте редакции.", 9, False, TEXT2).pack(anchor="w")
+        hero_mark = tk.Label(hero_inner, text="§", font=(FONT, 38, "bold"), fg="#5796FF", bg="#101D32")
+        hero_mark.pack(side="right", padx=(14, 8))
+
+        toolbar = tk.Frame(wrap, bg=BG)
+        toolbar.pack(fill="x", pady=(0, 9))
+        search = ui.Field(toolbar, "Название, номер или ключевое слово…", height=40, icon="⌕")
         search.pack(side="left", fill="x", expand=True)
         if self.is_staff("ADMIN"):
-            ui.RButton(bar, "Добавить закон", self.add_law_dialog, "secondary", icon="＋", height=40).pack(side="right", padx=(8, 0))
-            ui.RButton(bar, "Синхронизировать RMRP", self.sync_laws, "outline", icon="⟳", height=40).pack(side="right", padx=(8, 0))
-        sf = ui.ScrollFrame(wrap, bg=BG)
-        sf.pack(fill="both", expand=True)
-        grid = sf.body
-        foot = tk.Frame(wrap, bg=BG)
-        foot.pack(fill="x", pady=(8, 0))
-        count_lbl = ui.lbl(foot, "", 12, True)
-        count_lbl.pack(side="left")
-        ui.lbl(foot, "Сортировка:", 9, False, MUTED).pack(side="right", padx=(8, 0))
-        sort_var = tk.StringVar(value="По названию")
-        cb = ttk.Combobox(foot, textvariable=sort_var, values=["По названию", "По числу статей", "По обновлению"], state="readonly", width=18)
-        cb.pack(side="right")
-        state = {"laws": []}
+            ui.RButton(toolbar, "Синхронизировать", self.sync_laws, "outline", icon="⟳", height=40).pack(side="right", padx=(8, 0))
+            ui.RButton(toolbar, "Добавить", self.add_law_dialog, "secondary", icon="＋", height=40).pack(side="right", padx=(8, 0))
 
-        def render(_e=None):
-            for c in grid.winfo_children():
-                c.destroy()
-            q = search.get().lower()
-            laws = [l for l in state["laws"] if not q or q in (l.get("name") or "").lower() or q in (l.get("short_name") or "").lower()
-                    or q in (l.get("law_number") or "").lower()]
+        filters = tk.Frame(wrap, bg=BG)
+        filters.pack(fill="x", pady=(0, 10))
+        state = {"laws": [], "selected": None, "filter": "Все документы"}
+        filter_buttons = {}
+        def build_filters():
+            for old in filters.winfo_children():
+                old.destroy()
+            filter_buttons.clear()
+            for label in ("Все документы", "Федеральные законы", "Кодексы"):
+                b = ui.RButton(filters, label, lambda v=label: set_filter(v), "secondary" if label == state["filter"] else "ghost", height=31, size=8)
+                b.pack(side="left", padx=(0, 6))
+                filter_buttons[label] = b
+
+        build_filters()
+
+        # Основная рабочая область: каталог слева, сведения о выбранном документе справа.
+        area = tk.Frame(wrap, bg=BG)
+        area.pack(fill="both", expand=True)
+        area.grid_columnconfigure(0, weight=6, uniform="law_catalog")
+        area.grid_columnconfigure(1, weight=4, uniform="law_catalog")
+        area.grid_rowconfigure(0, weight=1)
+
+        list_card = ui.Card(area, radius=14, pad=12)
+        list_card.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        preview = ui.Card(area, radius=14, pad=16)
+        preview.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        list_head = tk.Frame(list_card.body, bg=PANEL)
+        list_head.pack(fill="x", pady=(0, 8))
+        count_lbl = ui.lbl(list_head, "Документы", 11, True)
+        count_lbl.pack(side="left")
+        sort_var = tk.StringVar(value="По названию")
+        sort = ttk.Combobox(list_head, textvariable=sort_var, values=["По названию", "По числу статей", "По обновлению"], state="readonly", width=17)
+        sort.pack(side="right")
+        list_scroll = ui.ScrollFrame(list_card.body, bg=PANEL)
+        list_scroll.pack(fill="both", expand=True)
+        list_body = list_scroll.body
+
+        def doc_kind(law):
+            number = (law.get("law_number") or "").upper()
+            name = (law.get("name") or "").lower()
+            return "Кодексы" if "кодекс" in name or number in ("УК РФ", "КоАП РФ", "УПК РФ", "ПК РФ") else "Федеральные законы"
+
+        def select_law(law):
+            state["selected"] = law
+            render_preview()
+            render_list()
+
+        def render_preview():
+            for child in preview.body.winfo_children():
+                child.destroy()
+            law = state["selected"]
+            if not law:
+                self.card_message(preview.body, "Выберите документ", "Нажмите на карточку в каталоге, чтобы увидеть описание и открыть его.")
+                return
+            kind = doc_kind(law)
+            tk.Label(preview.body, text=kind.upper(), font=(FONT, 8, "bold"), fg=ACCENT_TXT, bg=PANEL, anchor="w").pack(fill="x")
+            tk.Label(preview.body, text=law.get("short_name") or law.get("name") or "Документ", font=(FONT, 19, "bold"), fg=TEXT, bg=PANEL, anchor="w", justify="left", wraplength=330).pack(fill="x", pady=(9, 4))
+            tk.Label(preview.body, text=law.get("name") or "", font=(FONT, 9), fg=TEXT2, bg=PANEL, anchor="w", justify="left", wraplength=330).pack(fill="x", pady=(0, 12))
+            tk.Frame(preview.body, bg=BORDER, height=1).pack(fill="x", pady=(0, 12))
+            stats = tk.Frame(preview.body, bg=PANEL)
+            stats.pack(fill="x", pady=(0, 12))
+            for col in range(2):
+                stats.grid_columnconfigure(col, weight=1)
+            for col, (label, value) in enumerate((("НОМЕР ДОКУМЕНТА", law.get("law_number") or "—"), ("СТАТЕЙ В БАЗЕ", law.get("articles") if law.get("articles") is not None else "—"))):
+                cell = tk.Frame(stats, bg=PANEL2, highlightbackground=BORDER, highlightthickness=1)
+                cell.grid(row=0, column=col, sticky="nsew", padx=(0, 5) if col == 0 else (5, 0))
+                tk.Label(cell, text=label, font=(FONT, 7, "bold"), fg=MUTED, bg=PANEL2, anchor="w").pack(fill="x", padx=10, pady=(9, 3))
+                tk.Label(cell, text=str(value), font=(FONT, 13, "bold"), fg=TEXT, bg=PANEL2, anchor="w").pack(fill="x", padx=10, pady=(0, 9))
+            description = law.get("description") or "Документ включён в базу законодательства RMRP. Откройте его, чтобы перейти к содержанию и доступным статьям."
+            tk.Label(preview.body, text="О ДОКУМЕНТЕ", font=(FONT, 8, "bold"), fg=MUTED, bg=PANEL, anchor="w").pack(fill="x", pady=(2, 6))
+            tk.Label(preview.body, text=description, font=(FONT, 9), fg=TEXT2, bg=PANEL, anchor="nw", justify="left", wraplength=340).pack(fill="x")
+            updated = law.get("updated_at")
+            if updated:
+                tk.Label(preview.body, text=f"Последнее обновление: {updated[:10]}", font=(FONT, 8), fg=MUTED, bg=PANEL, anchor="w").pack(fill="x", pady=(12, 0))
+            tk.Frame(preview.body, bg=PANEL).pack(fill="both", expand=True)
+            ui.RButton(preview.body, "Открыть документ", lambda l=law: self.navigate("law", law_id=l["id"]), "primary", icon="→", height=42).pack(fill="x", pady=(14, 0))
+            if law.get("source_url"):
+                ui.RButton(preview.body, "Открыть источник RMRP", lambda u=law["source_url"]: webbrowser.open(u), "ghost", height=34).pack(fill="x", pady=(7, 0))
+
+        def render_list():
+            for child in list_body.winfo_children():
+                child.destroy()
+            q = search.get().strip().casefold()
+            laws = []
+            for law in state["laws"]:
+                hay = " ".join(str(law.get(k) or "") for k in ("name", "short_name", "law_number", "description")).casefold()
+                if q and q not in hay:
+                    continue
+                if state["filter"] != "Все документы" and doc_kind(law) != state["filter"]:
+                    continue
+                laws.append(law)
             mode = sort_var.get()
             if mode == "По числу статей":
-                laws.sort(key=lambda l: -(l.get("articles") or 0))
+                laws.sort(key=lambda x: -(x.get("articles") or 0))
             elif mode == "По обновлению":
-                laws.sort(key=lambda l: l.get("updated_at") or "", reverse=True)
+                laws.sort(key=lambda x: x.get("updated_at") or "", reverse=True)
             else:
-                laws.sort(key=lambda l: (l.get("short_name") or l.get("name") or "").lower())
-            count_lbl.configure(text=f"Все законы ({len(laws)})")
+                laws.sort(key=lambda x: (x.get("short_name") or x.get("name") or "").casefold())
+            count_lbl.configure(text=f"Документы · {len(laws)}")
             if not laws:
-                self.card_message(grid, "Законов не найдено", "Администратор может загрузить их кнопкой «Синхронизировать RMRP».")
+                self.card_message(list_body, "Ничего не найдено", "Измените поисковый запрос или выберите другую категорию.")
                 return
-            grid.grid_columnconfigure(0, weight=1, uniform="l")
-            grid.grid_columnconfigure(1, weight=1, uniform="l")
-            for i, law in enumerate(laws):
-                self._law_card(grid, law).grid(row=i // 2, column=i % 2, sticky="nsew", padx=(0, 7) if i % 2 == 0 else (7, 0), pady=7)
+            for law in laws:
+                active = state["selected"] and state["selected"].get("id") == law.get("id")
+                row = tk.Frame(list_body, bg=ui.mix(PANEL, ACCENT, .16) if active else PANEL,
+                               highlightbackground=ACCENT if active else BORDER, highlightthickness=1, cursor="hand2")
+                row.pack(fill="x", pady=4)
+                inner = tk.Frame(row, bg=row["bg"])
+                inner.pack(fill="x", padx=11, pady=10)
+                glyph = "§" if doc_kind(law) == "Кодексы" else "⚖"
+                tk.Label(inner, text=glyph, font=(FONT, 18, "bold"), fg=ACCENT_TXT, bg=row["bg"], width=2).pack(side="left", padx=(0, 9))
+                info = tk.Frame(inner, bg=row["bg"])
+                info.pack(side="left", fill="x", expand=True)
+                tk.Label(info, text=law.get("short_name") or law.get("name") or "Документ", font=(FONT, 10, "bold"), fg=TEXT, bg=row["bg"], anchor="w").pack(fill="x")
+                tk.Label(info, text=law.get("name") or "", font=(FONT, 8), fg=TEXT2, bg=row["bg"], anchor="w", justify="left", wraplength=420).pack(fill="x", pady=(3, 4))
+                meta = []
+                if law.get("law_number"):
+                    meta.append(law["law_number"])
+                if law.get("articles") is not None:
+                    meta.append(f"{law['articles']} стат.")
+                if law.get("updated_at"):
+                    meta.append(f"Обновл. {law['updated_at'][:10]}")
+                tk.Label(info, text="  ·  ".join(meta) or "Документ RMRP", font=(FONT, 7), fg=ACCENT_TXT, bg=row["bg"], anchor="w").pack(fill="x")
+                for widget in (row, inner, info, *inner.winfo_children(), *info.winfo_children()):
+                    widget.bind("<Button-1>", lambda _e, l=law: select_law(l))
+            if state["selected"] is None and laws:
+                state["selected"] = laws[0]
+                render_preview()
 
-        cb.bind("<<ComboboxSelected>>", render)
-        search.var.trace_add("write", lambda *a: render())
-        loader = self.loading(grid)
+        def set_filter(value):
+            state["filter"] = value
+            build_filters()
+            render_list()
+            if state["selected"] and value != "Все документы" and doc_kind(state["selected"]) != value:
+                state["selected"] = None
+                render_preview()
+
+        search.var.trace_add("write", lambda *_: render_list())
+        sort.bind("<<ComboboxSelected>>", lambda _e: render_list())
 
         def done(laws):
             state["laws"] = laws
-            loader.destroy()
-            render()
-        self.bg(lambda: self.get_laws(force=True), done, lambda e: (loader.configure(text=f"Не удалось загрузить: {e}")))
+            render_list()
+            if state["selected"] is None and laws:
+                state["selected"] = laws[0]
+                render_preview()
+
+        def failed(error):
+            self.card_message(list_body, "Не удалось загрузить документы", str(error))
+            self.card_message(preview.body, "Нет данных", "Проверьте подключение к базе Supabase.")
+
+        self.card_message(list_body, "Загружаем законодательство…", "Получаем список документов из базы RMRP.")
+        self.bg(lambda: self.get_laws(force=True), done, failed)
 
     def _law_card(self, parent, law):
         card = ui.Card(parent, radius=14, pad=16, height=150)
@@ -641,18 +771,40 @@ class LawPages:
         threading.Thread(target=worker, daemon=True).start()
 
     def _store_law(self, src, arts):
-        """Безопасная запись: апсерт статей, затем удаление исчезнувших. Закон не остаётся без статей при сбое."""
+        """Записывает проверенную выгрузку; при подозрении на неполную страницу не трогает БД."""
         db = self.db
+        if len(arts) < MIN_SYNC_ARTICLES:
+            raise RuntimeError(f"Слишком мало распознанных статей ({len(arts)}). Данные не изменены.")
+
+        numbers = [str(a.get("article_number") or "").strip() for a in arts]
+        if any(not number for number in numbers) or len(set(numbers)) != len(numbers):
+            raise RuntimeError("Выгрузка содержит пустые или повторяющиеся номера статей. Данные не изменены.")
+        if any(len((a.get("content") or "").strip()) < 30 for a in arts):
+            raise RuntimeError("Выгрузка содержит статьи без полного текста. Данные не изменены.")
+
         existing = db.table("laws", "id", {"source_url": f"eq.{src['url']}"}, "id.asc", 1)
         if not existing and src.get("law_number"):
             existing = db.table("laws", "id", {"law_number": f"eq.{src['law_number']}"}, "id.asc", 1)
+        law_id = existing[0]["id"] if existing else None
+
+        # Получаем прежний список ДО любых изменений. Если форум отдал только часть
+        # документа (например, антибот-страницу или обрезанный HTML), запрещаем импорт.
+        old = db.table_all("law_articles", "id,article_number", {"law_id": f"eq.{law_id}"}) if law_id else []
+        old_count = len(old)
+        if old_count >= MIN_SYNC_ARTICLES and len(arts) < old_count * MIN_SYNC_COVERAGE:
+            coverage = round(len(arts) / old_count * 100)
+            raise RuntimeError(
+                f"Похоже, форум отдал неполный документ: найдено {len(arts)} из {old_count} прежних статей ({coverage}%). "
+                "Импорт отменён, существующие данные сохранены. Проверьте доступность темы и повторите позже."
+            )
+
         payload = {"name": src["name"], "short_name": src["short_name"], "law_number": src.get("law_number"), "source_url": src["url"],
                    "description": "Актуальная редакция RMRP.", "is_active": True}
-        if existing:
-            law_id = existing[0]["id"]
+        if law_id:
             db.update("laws", {"id": f"eq.{law_id}"}, payload)
         else:
             law_id = db.insert("laws", payload)[0]["id"]
+
         rich = True
         for k in range(0, len(arts), 40):
             batch = [dict(a, law_id=law_id) for a in arts[k:k + 40]]
@@ -667,9 +819,9 @@ class LawPages:
                     db.insert("law_articles", batch, select="id", upsert_on="law_id,article_number")
                 else:
                     raise
-        keep = {a["article_number"] for a in arts}
-        old = db.table_all("law_articles", "id,article_number", {"law_id": f"eq.{law_id}"})
-        stale = [r["id"] for r in old if r["article_number"] not in keep]
+
+        keep = set(numbers)
+        stale = [r["id"] for r in old if str(r.get("article_number") or "") not in keep]
         for k in range(0, len(stale), 50):
             db.delete("law_articles", {"id": "in.(" + ",".join(str(x) for x in stale[k:k + 50]) + ")"})
         try:

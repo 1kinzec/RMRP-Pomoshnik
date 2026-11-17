@@ -197,7 +197,7 @@ class AuthPages:
         ui.RButton(f, "Продолжить как гость", self.do_guest, "secondary", height=40).pack(fill="x")
 
     def do_login(self):
-        ident, password = self.f_login.get(), self.f_pass.raw()
+        ident, password = self.f_login.get().strip(), self.f_pass.raw()
         if not ident or not password:
             self.notify(APP_NAME, "Введите логин (или email) и пароль.", "warning")
             return
@@ -208,15 +208,26 @@ class AuthPages:
         self.btn_login.set_disabled(True)
 
         def work():
-            email = ident
-            if "@" not in ident:
-                try:
-                    res = self.db.rpc("login_email", {"p_username": ident})
-                except Exception:  # noqa: BLE001
-                    res = None
-                email = res if isinstance(res, str) else None
+            email = ident.strip()
+            if "@" not in email:
+                # Do not hide RPC errors: a missing SQL function, permission
+                # issue or invalid API key is not the same as an unknown login.
+                res = self.db.rpc("login_email", {"p_username": email})
+                # PostgREST normally returns a scalar string for RETURNS text;
+                # accept list/object forms too for compatibility with wrappers.
+                if isinstance(res, str):
+                    email = res.strip()
+                elif isinstance(res, list) and res:
+                    first = res[0]
+                    email = (first if isinstance(first, str) else
+                             first.get("login_email") or first.get("email") or "") if isinstance(first, (str, dict)) else ""
+                    email = str(email).strip()
+                elif isinstance(res, dict):
+                    email = str(res.get("login_email") or res.get("email") or "").strip()
+                else:
+                    email = ""
                 if not email:
-                    raise RuntimeError("Пользователь с таким логином не найден. Попробуйте войти по email.")
+                    raise RuntimeError("Аккаунт с таким логином не найден или он неактивен. Проверьте написание логина.")
             data = self.db.auth_login(email, password)
             user = data.get("user") or {}
             if not self.db.access_token or not user.get("id"):

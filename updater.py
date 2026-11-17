@@ -1,7 +1,7 @@
-"""Автообновление через GitHub Releases: проверка версии, скачивание с проверкой SHA-256, запуск установщика.
+"""Автообновление RMRP Помощника через публичный манифест Supabase Storage.
 
-Логика без GUI (тестируется отдельно). Работает с публичным репозиторием; у приватного релизы
-без токена не читаются — тогда проверка просто молча ничего не находит.
+Манифест latest.json содержит version, installer, sha256, size и notes.
+Клиент не зависит от GitHub API или GitHub Releases.
 """
 import hashlib
 import json
@@ -10,12 +10,13 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.parse
 import urllib.request
 
-from .config import APP_VERSION, GITHUB_REPO
+from .config import APP_VERSION, UPDATE_MANIFEST_URL
 
-ALLOWED_HOSTS = ("github.com", "githubusercontent.com")
+ALLOWED_HOSTS = ("supabase.co",)
 ASSET_RE = re.compile(r"RMRP-Pomoshnik-Setup-.*\.exe")
 UA = {"User-Agent": f"RMRP-Pomoshnik/{APP_VERSION}"}
 
@@ -34,7 +35,17 @@ def host_ok(url, hosts=ALLOWED_HOSTS, require_https=True):
 
 
 def _get(url, timeout=15):
-    req = urllib.request.Request(url, headers=dict(UA, Accept="application/vnd.github+json"))
+    """Читает манифест с cache-busting, чтобы CDN не отдавал предыдущий релиз."""
+    parsed = urllib.parse.urlsplit(url)
+    query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    query.append(("_rmrp_check", str(int(time.time()))))
+    fresh_url = urllib.parse.urlunsplit(
+        (parsed.scheme, parsed.netloc, parsed.path, urllib.parse.urlencode(query), parsed.fragment)
+    )
+    headers = dict(UA, Accept="application/json")
+    headers["Cache-Control"] = "no-cache, no-store, max-age=0"
+    headers["Pragma"] = "no-cache"
+    req = urllib.request.Request(fresh_url, headers=headers)
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
@@ -43,29 +54,36 @@ def can_self_update():
     return bool(getattr(sys, "frozen", False)) and os.name == "nt"
 
 
-def check_latest(repo=None, current=None, fetch=None):
-    """Возвращает dict с данными новой версии или None, если обновления нет / репозиторий не задан."""
-    repo = repo if repo is not None else GITHUB_REPO
-    if not repo:
+def check_manifest(manifest_url=None, current=None, fetch=None):
+    """Проверяет latest.json и возвращает безопасные данные новой версии либо None."""
+    manifest_url = manifest_url or UPDATE_MANIFEST_URL
+    if not manifest_url or not host_ok(manifest_url):
         return None
-    data = json.loads((fetch or _get)(f"https://api.github.com/repos/{repo}/releases/latest").decode("utf-8"))
-    if data.get("draft") or data.get("prerelease"):
+    data = json.loads((fetch or _get)(manifest_url).decode("utf-8"))
+    version = str(data.get("version", "")).strip().lstrip("vV")
+    installer = data.get("installer") or {}
+    name = str(installer.get("name", ""))
+    url = str(installer.get("url", ""))
+    sha256 = str(installer.get("sha256", "")).lower()
+    size = int(installer.get("size") or 0)
+    if not version or parse_version(version) <= parse_version(current or APP_VERSION):
         return None
-    version = str(data.get("tag_name", "")).lstrip("vV")
-    if parse_version(version) <= parse_version(current or APP_VERSION):
+    if not ASSET_RE.fullmatch(name) or not host_ok(url):
         return None
-    assets = data.get("assets") or []
-    asset = next((a for a in assets if ASSET_RE.fullmatch(a.get("name", ""))), None)
-    if not asset:
+    if not re.fullmatch(r"[a-f0-9]{64}", sha256) or size <= 0:
         return None
-    sha = next((a for a in assets if a.get("name") == asset["name"] + ".sha256"), None)
-    return {"version": version, "notes": data.get("body") or "", "name": asset["name"], "url": asset["browser_download_url"],
-            "size": int(asset.get("size") or 0), "sha_url": sha["browser_download_url"] if sha else None,
-            "page": data.get("html_url") or f"https://github.com/{repo}/releases"}
+    return {"version": version, "notes": str(data.get("notes") or ""), "name": name,
+            "url": url, "size": size, "sha256": sha256,
+            "page": str(data.get("release_page") or manifest_url)}
+
+
+def check_latest(repo=None, current=None, fetch=None, manifest_url=None):
+    """Совместимая точка входа: проверяет только собственный Supabase-манифест."""
+    return check_manifest(manifest_url, current, fetch)
 
 
 def download(info, dest_dir=None, progress=None, hosts=ALLOWED_HOSTS, require_https=True, opener=None):
-    """Скачивает установщик. Проверяет хост, размер и SHA-256 (если в релизе есть .sha256). Возвращает путь к файлу."""
+    """Скачивает EXE, проверяет HTTPS-хост, размер и SHA-256 до запуска."""
     if not host_ok(info["url"], hosts, require_https):
         raise RuntimeError("Недопустимый адрес загрузки обновления.")
     opener = opener or urllib.request.urlopen
@@ -88,7 +106,12 @@ def download(info, dest_dir=None, progress=None, hosts=ALLOWED_HOSTS, require_ht
     if info.get("size") and done != info["size"]:
         os.remove(part)
         raise RuntimeError("Файл обновления скачался не полностью.")
-    if info.get("sha_url"):
+    expected_sha = info.get("sha256")
+    if expected_sha:
+        if not re.fullmatch(r"[a-fA-F0-9]{64}", str(expected_sha)) or expected_sha.lower() != sha.hexdigest():
+            os.remove(part)
+            raise RuntimeError("Контрольная сумма не совпала — обновление отклонено.")
+    elif info.get("sha_url"):
         if not host_ok(info["sha_url"], hosts, require_https):
             os.remove(part)
             raise RuntimeError("Недопустимый адрес контрольной суммы.")
@@ -103,5 +126,5 @@ def download(info, dest_dir=None, progress=None, hosts=ALLOWED_HOSTS, require_ht
 
 def launch_installer(path):
     """Запускает установщик в тихом режиме; приложение после этого должно закрыться."""
-    flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+    flags = 0x00000008 | 0x00000200 if os.name == "nt" else 0
     subprocess.Popen([path, "/SILENT", "/SUPPRESSMSGBOXES", "/CLOSEAPPLICATIONS", "/NORESTART"], close_fds=True, creationflags=flags)

@@ -89,8 +89,13 @@ class AiPages:
     @staticmethod
     def _compose_article(r, full=False):
         content = (r.get("content") or "").strip()
-        limit = 1800 if full else 700
-        body = content if len(content) <= limit else content[:limit].rsplit(" ", 1)[0] + "…"
+        if not content:
+            body = "Полный текст этой статьи пока отсутствует в базе. Попросите администратора повторить синхронизацию законодательства."
+        elif full or len(content) <= 700:
+            # По запросу «подробнее» показываем всю статью, а не обрезанные 1800 символов.
+            body = content
+        else:
+            body = content[:700].rsplit(" ", 1)[0] + "…"
         return f"Статья {r['article_number']} ({r['law_short']}) «{r.get('title') or 'без названия'}»:\n\n{body}"
 
     @classmethod

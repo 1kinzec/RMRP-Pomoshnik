@@ -6,47 +6,62 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest.mock import MagicMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "app"))
 from rmrp import updater  # noqa: E402
 
 
-def release(tag="v2.1.0", assets=None, **kw):
-    base = {"tag_name": tag, "body": "Заметки", "html_url": "https://github.com/o/r/releases/tag/" + tag, "assets": assets if assets is not None else [
-        {"name": f"RMRP-Pomoshnik-Setup-{tag.lstrip('v')}.exe", "browser_download_url": "https://github.com/o/r/releases/download/x/setup.exe", "size": 10},
-        {"name": f"RMRP-Pomoshnik-Setup-{tag.lstrip('v')}.exe.sha256", "browser_download_url": "https://github.com/o/r/releases/download/x/setup.exe.sha256", "size": 70}]}
-    base.update(kw)
-    return json.dumps(base).encode()
-
-
 class VersionTests(unittest.TestCase):
+    def manifest(self, version="3.1.0", **installer_overrides):
+        payload = b"fake setup"
+        installer = {
+            "name": f"RMRP-Pomoshnik-Setup-{version}.exe",
+            "url": f"https://cyihqnquxaxnonjbshm.supabase.co/storage/v1/object/public/app-releases/RMRP-Pomoshnik-Setup-{version}.exe",
+            "size": len(payload), "sha256": hashlib.sha256(payload).hexdigest(),
+        }
+        installer.update(installer_overrides)
+        return json.dumps({"version": version, "notes": "Обновление", "installer": installer}).encode("utf-8")
+
     def test_parse(self):
-        self.assertGreater(updater.parse_version("2.10.0"), updater.parse_version("2.9.9"))
-        self.assertGreater(updater.parse_version("v2.0.1"), updater.parse_version("2.0.0"))
+        self.assertGreater(updater.parse_version("3.10.0"), updater.parse_version("3.9.9"))
+        self.assertGreater(updater.parse_version("v3.0.1"), updater.parse_version("3.0.0"))
         self.assertEqual(updater.parse_version("abc"), (0,))
 
-    def test_newer_found(self):
-        info = updater.check_latest("o/r", "2.0.1", lambda url: release())
-        self.assertEqual(info["version"], "2.1.0")
-        self.assertTrue(info["sha_url"])
-        self.assertTrue(info["name"].endswith(".exe"))
+    def test_supabase_manifest(self):
+        url = "https://cyihqnquxaxnonjbshm.supabase.co/storage/v1/object/public/app-releases/latest.json"
+        raw = self.manifest()
+        info = updater.check_latest(current="3.0.1", fetch=lambda _: raw, manifest_url=url)
+        self.assertEqual(info["version"], "3.1.0")
+        self.assertTrue(info["sha256"])
+        self.assertIsNone(updater.check_latest(current="3.1.0", fetch=lambda _: raw, manifest_url=url))
+        self.assertIsNone(updater.check_latest(current="3.0.1", fetch=lambda _: raw, manifest_url="https://evil.example/latest.json"))
 
-    def test_same_or_older_ignored(self):
-        self.assertIsNone(updater.check_latest("o/r", "2.1.0", lambda url: release()))
-        self.assertIsNone(updater.check_latest("o/r", "3.0.0", lambda url: release()))
-
-    def test_no_repo_no_asset_draft(self):
-        self.assertIsNone(updater.check_latest("", "1.0", lambda url: release()))
-        self.assertIsNone(updater.check_latest("o/r", "1.0", lambda url: release(assets=[])))
-        self.assertIsNone(updater.check_latest("o/r", "1.0", lambda url: release(prerelease=True)))
-        self.assertIsNone(updater.check_latest("o/r", "1.0", lambda url: release(draft=True)))
+    def test_manifest_rejects_invalid_metadata(self):
+        url = "https://cyihqnquxaxnonjbshm.supabase.co/latest.json"
+        bad_hash = self.manifest(sha256="not-a-hash")
+        self.assertIsNone(updater.check_manifest(url, "3.0.0", lambda _: bad_hash))
+        bad_name = self.manifest(name="malware.exe")
+        self.assertIsNone(updater.check_manifest(url, "3.0.0", lambda _: bad_name))
 
     def test_host_allowlist(self):
-        self.assertTrue(updater.host_ok("https://github.com/a/b"))
-        self.assertTrue(updater.host_ok("https://objects.githubusercontent.com/x"))
-        self.assertFalse(updater.host_ok("http://github.com/a"))
-        self.assertFalse(updater.host_ok("https://evilgithub.com/a"))
-        self.assertFalse(updater.host_ok("https://github.com.evil.io/a"))
+        self.assertTrue(updater.host_ok("https://cyihqnquxaxnonjbshm.supabase.co/storage/file"))
+        self.assertFalse(updater.host_ok("http://cyihqnquxaxnonjbshm.supabase.co/file"))
+        self.assertFalse(updater.host_ok("https://evil-supabase.co/file"))
+        self.assertFalse(updater.host_ok("https://supabase.co.evil.io/file"))
+
+
+class ManifestCacheTests(unittest.TestCase):
+    def test_manifest_request_bypasses_cdn_cache(self):
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = b"{}"
+        with patch("urllib.request.urlopen", return_value=response) as opened:
+            updater._get("https://cyihqnquxaxnonjbshm.supabase.co/latest.json")
+        request = opened.call_args.args[0]
+        parsed = __import__("urllib.parse", fromlist=["urlsplit"]).urlsplit(request.full_url)
+        query = __import__("urllib.parse", fromlist=["parse_qs"]).parse_qs(parsed.query)
+        self.assertIn("_rmrp_check", query)
+        self.assertEqual(request.get_header("Cache-control"), "no-cache, no-store, max-age=0")
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -88,6 +103,10 @@ class DownloadTests(unittest.TestCase):
         path = self.run_dl(self.info(), progress=lambda d, t: seen.append((d, t)))
         self.assertEqual(open(path, "rb").read(), Handler.payload)
         self.assertEqual(seen[-1][0], len(Handler.payload))
+
+    def test_manifest_rejects_bad_hash(self):
+        with self.assertRaisesRegex(RuntimeError, "Контрольная сумма"):
+            self.run_dl(self.info(sha256="0" * 64))
 
     def test_bad_hash_rejected(self):
         orig = Handler.sha

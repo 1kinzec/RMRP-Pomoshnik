@@ -48,7 +48,14 @@ class Supabase:
 
     def _send(self, path, method, data, headers, _retry=True, timeout=25):
         """Один HTTP-вызов к Supabase с авторизацией и однократным обновлением токена. Возвращает текст ответа."""
-        h = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {self.access_token or SUPABASE_KEY}"}
+        # New Supabase publishable/secret keys (sb_*) are API keys, not JWTs.
+        # Send them only in `apikey`; Authorization must contain a real user JWT
+        # after sign-in. Legacy anon keys are JWTs and remain supported.
+        h = {"apikey": SUPABASE_KEY}
+        if self.access_token:
+            h["Authorization"] = f"Bearer {self.access_token}"
+        elif not SUPABASE_KEY.startswith(("sb_publishable_", "sb_secret_")):
+            h["Authorization"] = f"Bearer {SUPABASE_KEY}"
         h.update(headers or {})
         req = urllib.request.Request(SUPABASE_URL + path, data=data, headers=h, method=method)
         try:

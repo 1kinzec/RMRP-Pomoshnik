@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from . import ui
 from .api import ApiError, Supabase
-from .config import (ACCENT, ACCENT_HI, ACCENT_TXT, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BG2, BORDER, FONT, HEARTBEAT_SEC, MUTED,
+from .config import (ACCENT, ACCENT_HI, ACCENT_TXT, APP_NAME, APP_PUBLISHER, APP_VERSION, BG, BG2, BORDER, FONT, FONT_SYM, HEARTBEAT_SEC, MUTED,
                      PANEL, PANEL2, ROLE_COLOR_OVERRIDES, ROLE_ORDER, SIDEBAR, TEXT, TEXT2, PURPLE, parse_role_colors, role_color, role_label, set_role_colors,
                      settings_dir)
 from .discord_rpc import DiscordRPC, build_activity
@@ -261,48 +261,95 @@ class App(AuthPages, HomePages, LawPages, MemoPages, AiPages, TestPages, AdminPa
         self.content = None
 
     def show_main(self):
+        """Основная оболочка: компактная навигация и единая панель рабочего пространства."""
         self.clear_root()
         shell = tk.Frame(self, bg=BG)
         shell.pack(fill="both", expand=True)
-        side = tk.Frame(shell, bg=SIDEBAR, width=236, highlightbackground=BORDER, highlightthickness=1)
+
+        # Sidebar — fixed width, separated from the workspace by a quiet hairline.
+        side = tk.Frame(shell, bg=SIDEBAR, width=252, highlightbackground=BORDER, highlightthickness=1)
         side.pack(side="left", fill="y")
         side.pack_propagate(False)
 
         brand = tk.Frame(side, bg=SIDEBAR)
-        brand.pack(fill="x", padx=18, pady=(20, 16))
-        logo = ui.load_image("rmrp.png", (34, 34))
+        brand.pack(fill="x", padx=22, pady=(22, 18))
+        logo = ui.load_image("rmrp.png", (40, 40))
         if logo:
             tk.Label(brand, image=logo, bg=SIDEBAR, bd=0).pack(side="left")
-        tk.Label(brand, text="RMRP\nПОМОЩНИК", font=(FONT, 10, "bold"), fg=TEXT, bg=SIDEBAR, justify="left").pack(side="left", padx=8)
-        tk.Frame(side, bg=BORDER, height=1).pack(fill="x", padx=14, pady=(0, 10))
+        else:
+            mark = tk.Canvas(brand, width=40, height=40, bg=SIDEBAR, highlightthickness=0)
+            mark.pack(side="left")
+            mark.create_rectangle(1, 1, 39, 39, fill=ACCENT, outline="", width=0)
+            mark.create_text(20, 20, text="R", fill="#ffffff", font=(FONT, 19, "bold"))
+        brand_text = tk.Frame(brand, bg=SIDEBAR)
+        brand_text.pack(side="left", padx=10)
+        tk.Label(brand_text, text="RMRP", font=(FONT, 15, "bold"), fg=TEXT, bg=SIDEBAR).pack(anchor="w")
+        tk.Label(brand_text, text="LEGAL TECH  /  ПОМОЩНИК", font=(FONT, 7, "bold"), fg=MUTED, bg=SIDEBAR).pack(anchor="w", pady=(1, 0))
+        tk.Frame(side, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(0, 16))
 
+        tk.Label(side, text="РАБОЧЕЕ ПРОСТРАНСТВО", font=(FONT, 8, "bold"), fg=MUTED, bg=SIDEBAR, anchor="w").pack(fill="x", padx=22, pady=(0, 7))
         for key, glyph, title in NAV_MAIN:
             if self.guest and key in GUEST_HIDDEN:
                 continue
             self._nav_item(side, key, glyph, title)
+
         tk.Frame(side, bg=SIDEBAR).pack(fill="both", expand=True)
         if self.is_staff("ADMIN"):
+            tk.Frame(side, bg=BORDER, height=1).pack(fill="x", padx=20, pady=(5, 12))
             self._nav_item(side, "admin", "⚙", "Админ-панель", color=PURPLE)
         self._nav_item(side, "settings", "⛭", "Настройки")
-        tk.Frame(side, bg=BORDER, height=1).pack(fill="x", padx=14, pady=8)
-        self._nav_item(side, "__logout", "⎋", "Выход", color="#ff8095")
-        tk.Label(side, text=f"v{APP_VERSION}  •  {APP_PUBLISHER}", font=(FONT, 7), fg=MUTED, bg=SIDEBAR).pack(pady=(2, 10))
 
+        # Persistent account dock.
+        dock = tk.Frame(side, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
+        dock.pack(fill="x", padx=12, pady=(12, 8))
+        if self.guest:
+            tk.Label(dock, text="Вы используете гостевой режим", font=(FONT, 8), fg=MUTED, bg=PANEL, anchor="w").pack(fill="x", padx=12, pady=(11, 5))
+            ui.RButton(dock, "Войти в аккаунт", self.show_login, "primary", height=34).pack(fill="x", padx=9, pady=(0, 9))
+        else:
+            name = self.prof.get("display_name") or self.prof.get("username") or "Пользователь"
+            role = self.prof.get("role", "USER")
+            row = tk.Frame(dock, bg=PANEL)
+            row.pack(fill="x", padx=10, pady=10)
+            ui.Avatar(row, name, 38, self.prof.get("avatar_url") or "", online=True, ring=role_color(role), bg=PANEL).pack(side="left")
+            info = tk.Frame(row, bg=PANEL)
+            info.pack(side="left", fill="x", expand=True, padx=(9, 0))
+            tk.Label(info, text=name, font=(FONT, 9, "bold"), fg=TEXT, bg=PANEL, anchor="w").pack(fill="x")
+            tk.Label(info, text=role_label(role), font=(FONT, 8), fg=role_color(role), bg=PANEL, anchor="w").pack(fill="x", pady=(2, 0))
+            ui.RButton(dock, "⎋", self.logout, "ghost", width=32, height=30, outer=PANEL, size=12).pack(side="right", padx=(0, 7), pady=12)
+        tk.Label(side, text=f"VERSION {APP_VERSION}   •   {APP_PUBLISHER}", font=(FONT, 7), fg=MUTED, bg=SIDEBAR).pack(pady=(0, 10))
+
+        # Main workspace.
         right = tk.Frame(shell, bg=BG)
         right.pack(side="left", fill="both", expand=True)
         top = tk.Frame(right, bg=BG)
-        top.pack(fill="x", padx=32, pady=(24, 10))
+        top.pack(fill="x", padx=34, pady=(22, 12))
         titles = tk.Frame(top, bg=BG)
-        titles.pack(side="left")
+        titles.pack(side="left", fill="x", expand=True)
         self.header_title = tk.Label(titles, text="", font=(FONT, 22, "bold"), fg=TEXT, bg=BG, anchor="w")
         self.header_title.pack(anchor="w")
         self.header_sub = tk.Label(titles, text="", font=(FONT, 9), fg=MUTED, bg=BG, anchor="w")
-        self.header_sub.pack(anchor="w")
+        self.header_sub.pack(anchor="w", pady=(3, 0))
         self.chip_holder = tk.Frame(top, bg=BG)
         self.chip_holder.pack(side="right")
         self._build_chip()
+
+        # Search is an actual navigation affordance, not a decorative mockup field.
+        search_row = tk.Frame(right, bg=BG)
+        search_row.pack(fill="x", padx=34, pady=(0, 8))
+        search_box = tk.Frame(search_row, bg=PANEL, highlightbackground=BORDER, highlightthickness=1)
+        search_box.pack(side="left", fill="x", expand=True, ipady=2)
+        tk.Label(search_box, text="⌕", font=(FONT_SYM, 18), fg=MUTED, bg=PANEL).pack(side="left", padx=(13, 8))
+        search_hint = tk.Label(search_box, text="Найти закон, статью или ключевое слово…", font=(FONT, 9), fg=MUTED, bg=PANEL, anchor="w", cursor="hand2")
+        search_hint.pack(side="left", fill="x", expand=True, pady=10)
+        shortcut = tk.Label(search_box, text="CTRL  K", font=(FONT, 8, "bold"), fg=MUTED, bg=PANEL)
+        shortcut.pack(side="right", padx=13)
+        for widget in (search_box, search_hint, shortcut):
+            widget.bind("<Button-1>", lambda _e: self.navigate("search"))
+            widget.configure(cursor="hand2")
+        self.bind_all("<Control-k>", lambda _e: self.navigate("search"))
+
         self.content = tk.Frame(right, bg=BG)
-        self.content.pack(fill="both", expand=True, padx=32, pady=(8, 24))
+        self.content.pack(fill="both", expand=True, padx=34, pady=(8, 22))
         self.navigate("home")
         self.refresh_role_colors()
 

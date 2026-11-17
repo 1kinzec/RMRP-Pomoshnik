@@ -8,15 +8,17 @@ try:
     from .version import __version__ as APP_VERSION
 except ImportError:  # pragma: no cover
     APP_VERSION = "0.0.0"
-try:  # создаётся при сборке в GitHub Actions: GITHUB_REPO = "владелец/репозиторий"
-    from .build_info import GITHUB_REPO
-except ImportError:
-    GITHUB_REPO = ""
+# Публичный JSON-манифест в Supabase Storage. Для публикации новой версии
+# заменяется latest.json и загружается EXE в bucket app-releases.
+UPDATE_MANIFEST_URL = (
+    "https://cyihqnquxaxnonjbshm.supabase.co/storage/v1/object/public/"
+    "app-releases/latest.json"
+)
 APP_PUBLISHER = "Kinzec X WOLF"
 
 # Publishable key лежит в клиенте намеренно. Secret/service_role ключ сюда добавлять НЕЛЬЗЯ:
 # доступ к данным ограничивается политиками RLS в Supabase.
-SUPABASE_URL = "https://cyihqnquxaxnonjbvshm.supabase.co"
+SUPABASE_URL = "https://cyihqnquxaxnonjbshm.supabase.co"
 SUPABASE_KEY = "sb_publishable_3X8WkqV57kAqB8v6KS458A_mPnSBBRK"
 
 # Разделы форума RMRP, которые синхронизируются по умолчанию.

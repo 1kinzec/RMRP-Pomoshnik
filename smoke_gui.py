@@ -349,9 +349,9 @@ def main():
     app.add_announcement()
     app.overlay.show()
     from rmrp import updater
-    updater.GITHUB_REPO = "o/r"
-    updater.check_latest = lambda: {"version": "9.9.9", "notes": "n", "name": "RMRP-Pomoshnik-Setup-9.9.9.exe", "url": "https://github.com/x", "size": 1,
-                                    "sha_url": None, "page": "https://github.com/o/r/releases"}
+    updater.check_latest = lambda *a, **kw: {"version": "9.9.9", "notes": "n", "name": "RMRP-Pomoshnik-Setup-9.9.9.exe",
+                                             "url": "https://cyihqnquxaxnonjbshm.supabase.co/setup.exe", "size": 1,
+                                             "sha256": "0" * 64, "page": "https://cyihqnquxaxnonjbshm.supabase.co"}
     app.check_updates(manual=True)
     wait_threads()
     app.update_dialog(updater.check_latest())

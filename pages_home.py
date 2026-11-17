@@ -12,148 +12,140 @@ ANN_COLORS = {"INFO": ACCENT, "UPDATE": SUCCESS, "WARNING": WARNING, "IMPORTANT"
 
 class HomePages:
     def page_home(self):
+        """Главная панель в стиле Midnight Navy / Electric Blue."""
         name = self.prof.get("display_name") or self.prof.get("username") or "Гость"
         self.set_header("Главная", "Ваш центр работы с законодательством RMRP")
         wrap = self.scroll()
 
-        # Welcome / city hero — drawn natively so it works in the packaged EXE without network assets.
-        hero = tk.Canvas(wrap, height=174, bg="#08162b", highlightthickness=1, highlightbackground="#1d4779")
+        # Hero banner: typography and subtle legal-tech motif, drawn locally.
+        hero = tk.Canvas(wrap, height=192, bg="#101D32", highlightthickness=1, highlightbackground=BORDER)
         hero.pack(fill="x", pady=(2, 16))
-        hero.update_idletasks()
-        hw = max(hero.winfo_width(), 700)
-        hero.create_rectangle(0, 0, hw, 174, fill="#08162b", outline="")
-        # Electric-blue atmospheric glow and skyline on the right.
-        hero.create_oval(hw * .48, -130, hw * 1.08, 250, fill="#102f62", outline="")
-        hero.create_oval(hw * .68, -100, hw * 1.12, 210, fill="#123b78", outline="")
-        import random
-        rnd = random.Random(31)
-        x = int(hw * .48)
-        while x < hw + 20:
-            bw = rnd.randint(28, 68)
-            bh = rnd.randint(48, 132)
-            top = 158 - bh
-            hero.create_rectangle(x, top, x + bw, 160, fill=rnd.choice(["#0b1d39", "#10284d", "#0c2346"]), outline="#1b4d89")
-            for wx in range(x + 7, x + bw - 5, 13):
-                for wy in range(top + 9, 151, 15):
-                    if rnd.random() > .52:
-                        hero.create_rectangle(wx, wy, wx + 3, wy + 5, fill="#3478f6", outline="")
-            x += bw + rnd.randint(5, 12)
-        hero.create_rectangle(0, 160, hw, 174, fill="#061020", outline="")
-        hero.create_text(28, 42, text=f"Привет, {name}!", anchor="w", fill="#f3f7ff", font=(FONT, 22, "bold"))
-        hero.create_text(29, 79, text="Рады видеть вас в RMRP Помощнике", anchor="w", fill="#d7e6ff", font=(FONT, 11))
-        hero.create_rectangle(28, 105, 32, 145, fill=ACCENT, outline="")
-        hero.create_text(44, 125, text="Изучай законы, проходи тесты и будь готов к любой ситуации!", anchor="w", fill="#a9c6f2", font=(FONT, 9))
-        hero.create_text(hw - 34, 40, text="RMRP", anchor="e", fill="#4b91ff", font=(FONT, 28, "bold"))
-        hero.create_text(hw - 34, 68, text=f"LEGAL TECH  •  v{APP_VERSION}", anchor="e", fill="#8db8ff", font=(FONT, 8, "bold"))
+        def draw_hero(_event=None):
+            hero.delete("all")
+            w = max(hero.winfo_width(), 680)
+            hero.create_rectangle(0, 0, w, 192, fill="#101D32", outline="")
+            hero.create_oval(w * .67, -125, w * 1.08, 260, fill="#152B50", outline="")
+            hero.create_oval(w * .78, -75, w * 1.13, 225, fill="#173665", outline="")
+            # Thin blue orbit lines add depth without turning the banner into a noisy illustration.
+            for pad in (0, 13, 26):
+                hero.create_oval(w - 260 + pad, 28 + pad, w - 70 - pad, 218 - pad, outline="#244C86", width=1)
+            hero.create_text(28, 29, text="ВАШЕ РАБОЧЕЕ ПРОСТРАНСТВО", anchor="w", fill="#75A9FF", font=(FONT, 8, "bold"))
+            hero.create_text(28, 69, text=f"Добро пожаловать, {name}", anchor="w", fill=TEXT, font=(FONT, 21, "bold"))
+            hero.create_text(29, 104, text="Знание закона — ваше преимущество.", anchor="w", fill="#D5E3F8", font=(FONT, 11, "bold"))
+            hero.create_text(29, 132, text="Изучайте актуальные нормы сервера, находите статьи и готовьтесь к проверкам.", anchor="w", fill="#9EB1CD", font=(FONT, 9))
+            hero.create_rectangle(28, 157, 208, 185, fill=ACCENT, outline="")
+            hero.create_text(118, 171, text="Открыть законодательство  →", fill="#FFFFFF", font=(FONT, 8, "bold"))
+            hero.create_text(w - 155, 78, text="§", fill="#5796FF", font=(FONT, 64, "normal"))
+            hero.create_text(w - 155, 139, text="RMRP  •  LAW CENTER", fill="#91B6F2", font=(FONT, 8, "bold"))
+        hero.bind("<Configure>", draw_hero)
+        hero.bind("<Button-1>", lambda _e: self.navigate("laws"))
+        hero.configure(cursor="hand2")
 
-        tiles = tk.Frame(wrap, bg=wrap["bg"])
-        tiles.pack(fill="x", pady=(0, 15))
-        for i in range(4):
-            tiles.grid_columnconfigure(i, weight=1, uniform="t")
-        self._home_tiles = {}
-        specs = [("laws", "§", "Законодательство", "Полная база законов RMRP", ACCENT),
-                 ("search", "⌕", "Поиск", "Быстрый поиск по статьям", PURPLE),
-                 ("ai", "✦", "Нейросеть", "Помощь по законодательству", "#8b75ff"),
-                 ("tests", "✓", "Проверь себя", "Тесты и проверка знаний", "#e6a94a")]
-        for i, (key, glyph, title, sub, color) in enumerate(specs):
-            card = ui.Card(tiles, bg=ui.mix(PANEL, color, .10), border=ui.mix(PANEL, color, .48), radius=15, pad=15, height=145,
-                           hover_bg=ui.mix(PANEL, color, .20), hover_border=color)
-            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 6, 0 if i == 3 else 6))
-            ui.icon_tile(card.body, glyph, color, 48, bg=ui.mix(PANEL, color, .13)).pack(anchor="w")
-            ui.lbl(card.body, title, 12, True).pack(anchor="w", pady=(9, 2))
-            sub_l = ui.lbl(card.body, sub, 8, False, TEXT2)
-            sub_l.pack(anchor="w")
-            card.make_clickable(lambda k=key: self.navigate(k))
-            self._home_tiles[key] = sub_l
-
-        # Personal learning metrics.
+        # Live metrics — values are populated from Supabase, never hardcoded mock data.
         stats = tk.Frame(wrap, bg=wrap["bg"])
-        stats.pack(fill="x", pady=(0, 14))
+        stats.pack(fill="x", pady=(0, 16))
         for i in range(4):
-            stats.grid_columnconfigure(i, weight=1, uniform="stats")
-        stat_values = {}
-        stat_specs = [("tests", "…", "Пройдено тестов", ACCENT), ("avg", "…", "Успешность", SUCCESS),
-                      ("views", "…", "Изучено статей", PURPLE), ("favs", "…", "В избранном", WARNING)]
-        for i, (key, value, label, color) in enumerate(stat_specs):
-            c = ui.Card(stats, radius=12, pad=12)
-            c.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 5, 0 if i == 3 else 5))
-            v = ui.lbl(c.body, value, 19, True, color)
-            v.pack(anchor="w")
-            ui.lbl(c.body, label, 8, False, MUTED).pack(anchor="w")
-            stat_values[key] = v
+            stats.grid_columnconfigure(i, weight=1, uniform="home_stats")
+        metric_values = {}
+        metric_specs = [("laws", "—", "АКТИВНЫХ ЗАКОНОВ", ACCENT_TXT),
+                        ("articles", "—", "СТАТЕЙ В БАЗЕ", TEXT),
+                        ("tests", "—", "ПРОЙДЕНО ТЕСТОВ", PURPLE),
+                        ("avg", "—", "СРЕДНИЙ РЕЗУЛЬТАТ", SUCCESS)]
+        for i, (key, value, caption, color) in enumerate(metric_specs):
+            card = ui.Card(stats, radius=13, pad=14)
+            card.grid(row=0, column=i, sticky="nsew", padx=(0 if i == 0 else 5, 0 if i == 3 else 5))
+            ui.lbl(card.body, caption, 8, True, MUTED).pack(anchor="w")
+            val = ui.lbl(card.body, value, 22, True, color)
+            val.pack(anchor="w", pady=(5, 1))
+            ui.lbl(card.body, "Обновляется автоматически", 7, False, MUTED).pack(anchor="w")
+            metric_values[key] = val
+
+        # Two-column workspace: useful actions + latest announcements.
+        columns = tk.Frame(wrap, bg=wrap["bg"])
+        columns.pack(fill="x", pady=(0, 14))
+        columns.grid_columnconfigure(0, weight=3, uniform="home_cols")
+        columns.grid_columnconfigure(1, weight=2, uniform="home_cols")
+        quick = ui.Card(columns, radius=15, pad=16)
+        quick.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
+        latest = ui.Card(columns, radius=15, pad=16)
+        latest.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
+        ui.lbl(quick.body, "Быстрый доступ", 13, True).pack(anchor="w")
+        ui.lbl(quick.body, "Основные инструменты для ежедневной работы", 8, False, MUTED).pack(anchor="w", pady=(3, 12))
+        quick_grid = tk.Frame(quick.body, bg=PANEL)
+        quick_grid.pack(fill="x")
+        for i in range(2):
+            quick_grid.grid_columnconfigure(i, weight=1, uniform="quick")
+        actions = [("laws", "§", "Законодательство", "Действующие нормативные акты", ACCENT),
+                   ("ai", "✦", "Помощь нейросети", "Ответы по базе законов", PURPLE),
+                   ("tests", "✓", "Проверь себя", "Тесты по направлениям службы", SUCCESS),
+                   ("memos", "▤", "Краткие памятки", "Важное в удобном формате", WARNING)]
+        for i, (key, glyph, title, subtitle, color) in enumerate(actions):
+            card = tk.Frame(quick_grid, bg=PANEL2, highlightbackground=BORDER, highlightthickness=1, cursor="hand2")
+            card.grid(row=i // 2, column=i % 2, sticky="nsew", padx=(0 if i % 2 == 0 else 5, 5 if i % 2 == 0 else 0), pady=5, ipady=7)
+            icon = tk.Canvas(card, width=38, height=38, bg=PANEL2, highlightthickness=0)
+            icon.pack(side="left", padx=(11, 9), pady=8)
+            icon.create_rectangle(1, 1, 37, 37, fill=ui.mix(PANEL2, color, .18), outline="")
+            icon.create_text(19, 19, text=glyph, fill=color, font=(FONT, 17, "bold"))
+            copy = tk.Frame(card, bg=PANEL2)
+            copy.pack(side="left", fill="both", expand=True, pady=9)
+            tk.Label(copy, text=title, font=(FONT, 9, "bold"), fg=TEXT, bg=PANEL2, anchor="w").pack(fill="x")
+            tk.Label(copy, text=subtitle, font=(FONT, 7), fg=MUTED, bg=PANEL2, anchor="w").pack(fill="x", pady=(3, 0))
+            for widget in (card, icon, copy, *copy.winfo_children()):
+                widget.bind("<Button-1>", lambda _e, k=key: self.navigate(k))
+                widget.bind("<Enter>", lambda _e, c=card: c.configure(highlightbackground=ACCENT))
+                widget.bind("<Leave>", lambda _e, c=card: c.configure(highlightbackground=BORDER))
+        ui.lbl(latest.body, "Последние обновления", 13, True).pack(anchor="w")
+        ui.lbl(latest.body, "Объявления и важная информация", 8, False, MUTED).pack(anchor="w", pady=(3, 12))
+        self._home_ann = tk.Frame(latest.body, bg=PANEL)
+        self._home_ann.pack(fill="x")
+        self.loading(self._home_ann, "Загружаем обновления…")
+
+        recent = ui.Card(wrap, radius=15, pad=16)
+        recent.pack(fill="x", pady=(0, 14))
+        ui.lbl(recent.body, "Последнее изученное", 12, True).pack(anchor="w", pady=(0, 8))
+        self._home_recent = tk.Frame(recent.body, bg=PANEL)
+        self._home_recent.pack(fill="x")
+        self.loading(self._home_recent, "Загружаем историю…")
+
         if self.guest:
-            for v in stat_values.values():
-                v.configure(text="—")
-        else:
-            def stats_work():
-                out = {"tests": 0, "avg": "—", "views": 0, "favs": 0}
+            metric_values["tests"].configure(text="—")
+            metric_values["avg"].configure(text="—")
+        def work():
+            out = {"laws": "—", "articles": "—", "tests": "—", "avg": "—", "recent": [], "ann": []}
+            try:
+                out["laws"] = str(len(self.db.table("laws", "id", {"is_active": "eq.true"})))
+            except Exception:
+                pass
+            try:
+                out["articles"] = str(len(self.db.table("law_articles", "id", {"is_active": "eq.true"})))
+            except Exception:
+                try:
+                    out["articles"] = str(len(self.db.table("law_articles", "id")))
+                except Exception:
+                    pass
+            if not self.guest:
                 try:
                     results = self.db.table("test_results", "score", {"user_id": f"eq.{self.uid}"}, None, 500)
-                    out["tests"] = len(results)
+                    out["tests"] = str(len(results))
                     scores = [float(r.get("score")) for r in results if r.get("score") is not None]
                     out["avg"] = f"{round(sum(scores) / len(scores))}%" if scores else "—"
                 except Exception:
                     pass
-                for key, table, field in (("views", "article_views", "id"), ("favs", "favorites", "id")):
-                    try:
-                        out[key] = len(self.db.table(table, field, {"user_id": f"eq.{self.uid}"}, None, 500))
-                    except Exception:
-                        pass
-                return out
-            self.bg(stats_work, lambda data: [stat_values[k].configure(text=str(v)) for k, v in data.items()])
-
-        cols = tk.Frame(wrap, bg=wrap["bg"])
-        cols.pack(fill="both", expand=True)
-        cols.grid_columnconfigure(0, weight=3, uniform="c")
-        cols.grid_columnconfigure(1, weight=2, uniform="c")
-        left = ui.Card(cols, radius=14, pad=16)
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 7))
-        right = ui.Card(cols, radius=14, pad=16)
-        right.grid(row=0, column=1, sticky="nsew", padx=(7, 0))
-        ui.lbl(left.body, "Последнее изученное", 12, True).pack(anchor="w", pady=(0, 9))
-        ui.lbl(right.body, "Объявления", 12, True).pack(anchor="w", pady=(0, 9))
-        self._home_recent = tk.Frame(left.body, bg=PANEL)
-        self._home_recent.pack(fill="x")
-        self._home_ann = tk.Frame(right.body, bg=PANEL)
-        self._home_ann.pack(fill="x")
-        self.loading(self._home_recent)
-        self.loading(self._home_ann)
-        self._home_team = ui.Card(wrap, radius=14, pad=16)
-        self._home_team.pack(fill="x", pady=(13, 0))
-        ui.lbl(self._home_team.body, "Команда приложения", 12, True).pack(anchor="w")
-        ui.lbl(self._home_team.body, "Основатель, администраторы и модераторы RMRP Помощник.", 8, False, MUTED).pack(anchor="w", pady=(2, 8))
-        self._home_team_grid = tk.Frame(self._home_team.body, bg=PANEL)
-        self._home_team_grid.pack(fill="x")
-
-        def work():
-            out = {"laws": None, "recent": [], "ann": [], "team": []}
-            try:
-                out["laws"] = len(self.db.table("laws", "id", {"is_active": "eq.true"}))
-            except Exception:
-                pass
-            if not self.guest:
                 try:
                     out["recent"] = self.db.table("article_views", "viewed_at,law_articles(id,law_id,article_number,title,laws(short_name))",
                                                   {"user_id": f"eq.{self.uid}"}, "viewed_at.desc", 5)
                 except Exception:
                     pass
             try:
-                out["ann"] = self.db.table("announcements", "id,title,content,type,created_at,expires_at", {"is_active": "eq.true"}, "created_at.desc", 6)
-            except Exception:
-                pass
-            try:
-                out["team"] = self.db.rpc("app_team")
+                out["ann"] = self.db.table("announcements", "id,title,content,type,created_at,expires_at", {"is_active": "eq.true"}, "created_at.desc", 5)
             except Exception:
                 pass
             return out
-
-        def done(d):
-            if d["laws"] is not None:
-                n = d["laws"]
-                self._home_tiles["laws"].configure(text=f"{n} {plural(n, 'закон', 'закона', 'законов')} RMRP")
-            self._render_recent(d["recent"])
-            self._render_ann(d["ann"])
-            self._render_team(d["team"])
+        def done(data):
+            for key in ("laws", "articles", "tests", "avg"):
+                metric_values[key].configure(text=data[key])
+            self._render_ann(data["ann"])
+            self._render_recent(data["recent"])
         self.bg(work, done)
 
     def _render_team(self, rows):
